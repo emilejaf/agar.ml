@@ -11,5 +11,8 @@ let clear_window color =
       fill_rect 0 0 (size_x ()) (size_y ());
       set_color fg;;
 
-let () = 
-  open_window
+let rec event_loop ()= 
+  Unix.sleep 1;
+  event_loop ();;
+
+let () = open_window; event_loop ();; 
