@@ -1,13 +1,13 @@
 open Graphics;;
 
-Random.self_init
+Random.init (int_of_float(Unix.time ()))
 
-type coordonees = {x: int; y: int};;
-let map = ({x = 0; y = 0;}, {x = 2000; y = 2000});;
+type coordonees = {x: float; y: float};;
+let map = ({x = 0.; y = 0.;}, {x = 2000.; y = 2000.});;
 let generate_cord = 
   let min, max = map in
-  let x = Random.int (max.x - min.x) + min.x
-  and y = Random.int (max.y - min.y) + min.y
+  let x = Random.float (max.x -. min.x) +. min.x
+  and y = Random.float (max.y -. min.y) +. min.y
   in
   {x = x; y = y};;  
 
@@ -25,7 +25,7 @@ class entity coord color masse =
     method getCoordonees = coordonees;
     method getColor = color;
     method getRadius = masse * 3;
-    method addCoordonees (c : coordonees) = coordonees <- { x = coordonees.x + c.x; y = coordonees.y + c.y};
+    method addCoordonees (c : coordonees) = coordonees <- { x = coordonees.x +. c.x; y = coordonees.y +. c.y};
 end;;
 
 class player = 
@@ -37,9 +37,12 @@ class player =
       let mainEntity = self#getMainEntity
     in let currentCord = mainEntity#getCoordonees
       and min, max = map
-    in let newX = if mousex > (size_x ()/ 2) then (if currentCord.x = max.x then 0 else 1) else (if(currentCord.x = min.x) then 0 else -1)
-    and newY = if mousey > (size_y ()/ 2) then (if currentCord.y = max.y then 0 else 1) else (if(currentCord.y = min.y) then 0 else -1)
-    in mainEntity#addCoordonees ({x = newX; y = newY});
+    in let vecteur = {x = float_of_int (mousex - size_x () / 2); y = float_of_int (mousey - size_y () / 2)}
+  in let norme = sqrt(vecteur.x *. vecteur.x +. vecteur.y *. vecteur.y)
+  in let vecteurNormal = {x = vecteur.x *. 10. /. norme; y = vecteur.y *. 10. /. norme}
+  in let x = if currentCord.x +. vecteurNormal.x > min.x then if currentCord.x +. vecteurNormal.x < max.x then vecteurNormal.x else max.x -. currentCord.x else min.x -. currentCord.x 
+  and y = if currentCord.y +. vecteurNormal.y > min.y then if currentCord.y +. vecteurNormal.y < max.y then vecteurNormal.y else max.y -. currentCord.y else min.y -. currentCord.y
+    in mainEntity#addCoordonees {x = x; y = y};
 end;;
 
  let player = new player;;
@@ -58,13 +61,13 @@ let drawMainPlayer player =
 
 
 let drawGrid player =
-  let gridSpacing = 80 
+  let gridSpacing = 40 
   and mainEntity = player#getMainEntity in
   let currentCord = mainEntity#getCoordonees
-in let gridStartX = gridSpacing - currentCord.x mod gridSpacing
-  and gridStartY = gridSpacing - currentCord.y mod gridSpacing
+in let gridStartX = gridSpacing - int_of_float currentCord.x mod gridSpacing
+  and gridStartY = gridSpacing - int_of_float currentCord.y mod gridSpacing
 in let i = ref gridStartX and j = ref gridStartY
-in set_color (rgb 10 10 10);
+in set_color (rgb 208 208 208);
 while !i < size_x () do
   moveto !i 0;
   lineto !i (size_y ());
@@ -84,7 +87,7 @@ let rec event_loop () =
   player#updateCoords mousex mousey;
   moveto 0 0; draw_string (Printf.sprintf "Mouse position: %d,%d" mousex mousey);
   let playerCord = player#getMainEntity#getCoordonees in
-  moveto 0 100; draw_string (Printf.sprintf "Player position: %d,%d" playerCord.x  playerCord.y);
+  moveto 0 100; draw_string (Printf.sprintf "Player position: %f,%f" playerCord.x  playerCord.y);
   Unix.sleepf 0.05;
   event_loop ();;
 
