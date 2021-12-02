@@ -5,6 +5,10 @@ Random.init (int_of_float(Unix.time ()))
 type coordonees = {x: float; y: float};;
 let map = ({x = 0.; y = 0.;}, {x = 2000.; y = 2000.});;
 
+let maxFood = 100;;
+let spawnFoodRadius = 200.;;
+let despawnFoodRadius = 300.;;
+
 let generate_cord () = 
   let min, max = map in
   let x = Random.float (max.x -. min.x) +. min.x
@@ -18,6 +22,12 @@ let generate_color () =
   and b = Random.int (255) + 1
 in rgb r g b;;
 
+let collision entity1 entity2 scaleRatio = 
+  if (sqrt((entity1#getCoordonees.x -. entity2#getCoordonees.x) *. (entity1#getCoordonees.x -. entity2#getCoordonees.x)+.
+    (entity1#getCoordonees.y -. entity2#getCoordonees.y) *. (entity1#getCoordonees.y -. entity2#getCoordonees.y)) *. scaleRatio) < float_of_int ((entity1#getRadius + entity2#getRadius))
+  then true
+  else false;;
+
 class entity coord color masse = 
   object 
     val mutable coordonees = (coord : coordonees)
@@ -25,8 +35,10 @@ class entity coord color masse =
     val mutable masse = (masse : int)
     method getCoordonees = coordonees;
     method getColor = color;
-    method getRadius = masse * 3;
+    method getRadius = if masse = 1 then 8 else 30 + int_of_float ((float_of_int masse)**0.5);
     method addCoordonees (c : coordonees) = coordonees <- { x = coordonees.x +. c.x; y = coordonees.y +. c.y};
+    method addMasse quantity = masse <- masse + quantity;
+    method getMasse = masse;
 end;;
 
 class player = 
@@ -34,7 +46,12 @@ class player =
     val mutable entities = ([new entity (generate_cord ()) (generate_color ()) 10 ] : entity list);
     val mutable score = (0 : int);
     val mutable foods = ([]: entity list);
+
+
     method getMainEntity = List.hd entities;
+
+    method getScore = score;
+
     method updateCoords mousex mousey = 
       let mainEntity = self#getMainEntity
     in let currentCord = mainEntity#getCoordonees
@@ -45,29 +62,41 @@ class player =
   in let x = if currentCord.x +. vecteurNormal.x > min.x then if currentCord.x +. vecteurNormal.x < max.x then vecteurNormal.x else max.x -. currentCord.x else min.x -. currentCord.x 
   and y = if currentCord.y +. vecteurNormal.y > min.y then if currentCord.y +. vecteurNormal.y < max.y then vecteurNormal.y else max.y -. currentCord.y else min.y -. currentCord.y
     in mainEntity#addCoordonees {x = x; y = y};
+
   method generateFoods = 
-    let i = ref 0
+    let i = ref (List.length foods);
     and min, max = map in
-    while !i < 1 do
+    while !i < maxFood do
       let playerCord = self#getMainEntity#getCoordonees in
-      let x = (if Random.bool () then 1. else -1.) *. Random.float(200.) +. playerCord.x
-      and y = (if Random.bool () then 1. else -1.) *. Random.float(200.) +. playerCord.y in
+      let x = (if Random.bool () then 1. else -1.) *. Random.float(spawnFoodRadius) +. playerCord.x
+      and y = (if Random.bool () then 1. else -1.) *. Random.float(spawnFoodRadius) +. playerCord.y in
     if x > min.x && x < max.x && y > min.y && y < max.y then
-      let newFood = new entity {x = x; y = y;} (generate_color ()) 2;
+      let newFood = new entity {x = x; y = y;} (generate_color ()) 1;
       in foods <- newFood :: foods;
     i := !i + 1;
     done;
+
+  method destroyFoods = 
+    foods <- List.filter (fun food -> 
+      let foodCord = food#getCoordonees
+      and playerCord = self#getMainEntity#getCoordonees
+    in if abs_float (foodCord.x -. playerCord.x) > despawnFoodRadius || abs_float (foodCord.y -. playerCord.y) > despawnFoodRadius then false else true) foods;
   method getFoods = foods;
+
+  method getRatio = 150. /. float_of_int (self#getMainEntity#getRadius);
+  
+  method getDrawFoodFun = fun x y color radius -> (set_color color; fill_circle x y radius);
+
+  method handleFoodCollisions = foods <- List.filter (fun food -> 
+    let mainEntity = self#getMainEntity
+    in if collision mainEntity food self#getRatio then
+      let () = self#updateScore mainEntity food#getMasse
+      in false
+    else true
+    ) foods;
+
+    method updateScore entity quantity = score <- score + quantity; entity#addMasse quantity;
 end;;
-
- let player = new player;;
-
-
-let open_window () = 
-  open_graph "";
-  resize_window 800 600;
-  set_window_title "Agar.ml";
-  auto_synchronize false;;
 
 
 let drawMainPlayer player =
@@ -88,13 +117,8 @@ let spawn_buisson_feed coordonees rayon =
       affiche_entity entity
     done;;
 *)
-let collision entity1 entity2 = 
-  if (sqrt((entity1#getCoordonees.x -. entity2#getCoordonees.x) *. (entity1#getCoordonees.x -. entity2#getCoordonees.x)+.
-    (entity1#getCoordonees.y -. entity2#getCoordonees.y) *. (entity1#getCoordonees.y -. entity2#getCoordonees.y)) < float_of_int((entity1#getRadius)+(entity2#getRadius)))
-  then true
-  else false;;
 
-let mange entity1 entity2 =
+(* let mange entity1 entity2 =
   if (collision entity1 entity2) then 
     begin
       let r1 = float_of_int(entity1#getRadius) and r2 = float_of_int(entity2#getRadius) and
@@ -109,19 +133,20 @@ let mange entity1 entity2 =
       else
         if (((Float.pi *. r2 *. r2) /. aire) >= 0.80) then () (* Supprime entity2*)
         else ()
-    end;;
+    end;; 
+*)
 
-let dessine_buisson coord = let tableau_coord = Array.make 80 (0,0) and tableau_coord2 = Array.make 80 (0,0) and rayon = 60. and cote = 6. and compteur = ref 0 and alpha = 2.*.Float.pi/.40. in
+let drawBush x y = let tableau_coord = Array.make 80 (0,0) and tableau_coord2 = Array.make 80 (0,0) and rayon = 60. and cote = 6. and compteur = ref 0 and alpha = 2.*.Float.pi/.40. in
   for k=0 to 40-1 do
     let i = float_of_int k in
-    tableau_coord.(!compteur) <- (int_of_float(coord.x +. rayon *. cos(i *. alpha)), int_of_float(coord.y +. rayon*.sin(i *. alpha)));
-    tableau_coord2.(!compteur) <- (int_of_float(coord.x +. (rayon -. 5.) *. cos(i *. alpha)), int_of_float(coord.y +. (rayon -. 5.)*.sin(i *. alpha)));
+    tableau_coord.(!compteur) <- (int_of_float(x +. rayon *. cos(i *. alpha)), int_of_float(y +. rayon*.sin(i *. alpha)));
+    tableau_coord2.(!compteur) <- (int_of_float(x +. (rayon -. 5.) *. cos(i *. alpha)), int_of_float(y +. (rayon -. 5.)*.sin(i *. alpha)));
     compteur := !compteur + 1;
     let distance = (rayon*.cos(alpha/.2.) +. sqrt(cote*.cote -. (rayon*.sin(alpha/.2.))*.(rayon*.sin(alpha/.2.)))) in
-    tableau_coord.(!compteur) <- (int_of_float (coord.x +. cos(i *. alpha +. alpha/.2.)*.distance),
-                                  int_of_float (coord.y +. sin(i *. alpha +. alpha/.2.)*.distance));
-    tableau_coord2.(!compteur) <- (int_of_float (coord.x +. cos(i *. alpha +. alpha/.2.)*.(distance -. 5.)),
-                                   int_of_float (coord.y +. sin(i *. alpha +. alpha/.2.)*.(distance -. 5.)));
+    tableau_coord.(!compteur) <- (int_of_float (x +. cos(i *. alpha +. alpha/.2.)*.distance),
+                                  int_of_float (y +. sin(i *. alpha +. alpha/.2.)*.distance));
+    tableau_coord2.(!compteur) <- (int_of_float (x +. cos(i *. alpha +. alpha/.2.)*.(distance -. 5.)),
+                                   int_of_float (y +. sin(i *. alpha +. alpha/.2.)*.(distance -. 5.)));
     compteur := !compteur + 1
   done;
   set_color (rgb 57 230 20);
@@ -129,29 +154,21 @@ let dessine_buisson coord = let tableau_coord = Array.make 80 (0,0) and tableau_
   set_color (rgb 57 255 20);
   fill_poly (tableau_coord2);;
 
-let drawFood player = 
-  let foods = player#getFoods
-  and mainEntity = player#getMainEntity in
-  let mainEntityCord = mainEntity#getCoordonees
-  and ratioX = float_of_int (size_x () / 2) /. float_of_int (mainEntity#getRadius * 2)
-  and ratioY = float_of_int (size_y () / 2) /. float_of_int (mainEntity#getRadius * 2) in
-  List.iter (fun food ->
-    let xFood = food#getCoordonees.x
-    and yFood = food#getCoordonees.y
-  in let realX = int_of_float((xFood -. mainEntityCord.x) *. ratioX) +size_x () / 2
-  and realY = int_of_float((yFood -. mainEntityCord.y) *. ratioY) + size_y() / 2 in
-  if realX > 0 && realX < size_x () && realY > 0 && realY < size_y () then
-    set_color food#getColor; fill_circle realX realY food#getRadius; )
-  foods;; 
+let drawEntities player entities drawFunc = 
+  let mainEntityCord = player#getMainEntity#getCoordonees in
+  List.iter (fun entity ->
+  let realX = int_of_float((entity#getCoordonees.x -. mainEntityCord.x) *. player#getRatio) + size_x () / 2
+  and realY = int_of_float((entity#getCoordonees.y -. mainEntityCord.y) *. player#getRatio) + size_y() / 2 
+  in if realX > 0 && realX < size_x () && realY > 0 && realY < size_y () then
+    drawFunc realX realY entity#getColor entity#getRadius )
+  entities;; 
 
 let drawGrid player =
-  let gridSpacing = 40 
+  let gridSpacing = 60 
   and mainEntity = player#getMainEntity in
   let currentCord = mainEntity#getCoordonees
-  and ratioX = float_of_int (size_x () / 2) /. float_of_int (mainEntity#getRadius * 2)
-  and ratioY = float_of_int (size_y () / 2) /. float_of_int (mainEntity#getRadius * 2)
-in let gridStartX = gridSpacing - int_of_float (currentCord.x *. ratioX) mod gridSpacing
-  and gridStartY = gridSpacing - int_of_float (currentCord.y *. ratioY) mod gridSpacing
+in let gridStartX = gridSpacing - int_of_float (currentCord.x *. player#getRatio) mod gridSpacing
+  and gridStartY = gridSpacing - int_of_float (currentCord.y *. player#getRatio) mod gridSpacing
 in let i = ref gridStartX and j = ref gridStartY
 in set_color (rgb 208 208 208);
 while !i < size_x () do
@@ -165,20 +182,37 @@ while !j < size_y () do
   j := !j + gridSpacing;
 done;;
 
+let player = new player;;
+
 let rec event_loop () = 
   clear_graph();
-  drawGrid player;
-  player#generateFoods;
-  drawFood player;
-  drawMainPlayer player;
-  dessine_buisson {x=200.; y=200.};
+
+  (* UPDATES *)
   let (mousex, mousey) = mouse_pos () in
   player#updateCoords mousex mousey;
+  player#destroyFoods;
+  player#handleFoodCollisions;
+  player#generateFoods;
+
+  (* DRAW *)
+  drawGrid player;
+  drawEntities player player#getFoods player#getDrawFoodFun;
+  drawMainPlayer player;
+  
+  (* MONITORING *)
   moveto 0 0; draw_string (Printf.sprintf "Mouse position: %d,%d" mousex mousey);
   let playerCord = player#getMainEntity#getCoordonees in
   moveto 0 100; draw_string (Printf.sprintf "Player position: %f,%f" playerCord.x  playerCord.y);
+
+
   synchronize ();
   Unix.sleepf 0.05;
   event_loop ();;
+
+let open_window () = 
+  open_graph "";
+  resize_window 800 600;
+  set_window_title "Agar.ml";
+  auto_synchronize false;;
 
 let () = open_window (); event_loop ();; 
