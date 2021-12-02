@@ -35,7 +35,7 @@ class entity coord color masse =
     val mutable masse = (masse : int)
     method getCoordonees = coordonees;
     method getColor = color;
-    method getRadius = if masse = 1 then 8 else 30 + int_of_float ((float_of_int masse)**0.5);
+    method getRadius = if masse = 1 then 8 else 30 + int_of_float ((float_of_int masse)**0.4);
     method addCoordonees (c : coordonees) = coordonees <- { x = coordonees.x +. c.x; y = coordonees.y +. c.y};
     method addMasse quantity = masse <- masse + quantity;
     method getMasse = masse;
@@ -52,13 +52,21 @@ class player =
 
     method getScore = score;
 
+    method getSpeed = 3.5 *. exp (-. float_of_int (score) /. 300.) +. 1.5;
+
+    method getFoods = foods;
+  
+    method getRatio = 150. /. float_of_int (self#getMainEntity#getRadius);
+    
+    method getDrawFoodFun = fun x y color radius -> (set_color color; fill_circle x y radius);
+    
     method updateCoords mousex mousey = 
       let mainEntity = self#getMainEntity
     in let currentCord = mainEntity#getCoordonees
       and min, max = map
     in let vecteur = {x = float_of_int (mousex - size_x () / 2); y = float_of_int (mousey - size_y () / 2)}
   in let norme = sqrt(vecteur.x *. vecteur.x +. vecteur.y *. vecteur.y)
-  in let vecteurNormal = {x = vecteur.x *. 2. /. norme; y = vecteur.y *. 2. /. norme}
+  in let vecteurNormal = {x = vecteur.x *. self#getSpeed /. norme; y = vecteur.y *. self#getSpeed /. norme}
   in let x = if currentCord.x +. vecteurNormal.x > min.x then if currentCord.x +. vecteurNormal.x < max.x then vecteurNormal.x else max.x -. currentCord.x else min.x -. currentCord.x 
   and y = if currentCord.y +. vecteurNormal.y > min.y then if currentCord.y +. vecteurNormal.y < max.y then vecteurNormal.y else max.y -. currentCord.y else min.y -. currentCord.y
     in mainEntity#addCoordonees {x = x; y = y};
@@ -81,11 +89,6 @@ class player =
       let foodCord = food#getCoordonees
       and playerCord = self#getMainEntity#getCoordonees
     in if abs_float (foodCord.x -. playerCord.x) > despawnFoodRadius || abs_float (foodCord.y -. playerCord.y) > despawnFoodRadius then false else true) foods;
-  method getFoods = foods;
-
-  method getRatio = 150. /. float_of_int (self#getMainEntity#getRadius);
-  
-  method getDrawFoodFun = fun x y color radius -> (set_color color; fill_circle x y radius);
 
   method handleFoodCollisions = foods <- List.filter (fun food -> 
     let mainEntity = self#getMainEntity
@@ -164,7 +167,7 @@ let drawEntities player entities drawFunc =
   entities;; 
 
 let drawGrid player =
-  let gridSpacing = 60 
+  let gridSpacing = 60
   and mainEntity = player#getMainEntity in
   let currentCord = mainEntity#getCoordonees
 in let gridStartX = gridSpacing - int_of_float (currentCord.x *. player#getRatio) mod gridSpacing
