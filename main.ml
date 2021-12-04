@@ -9,6 +9,10 @@ let maxFood = 100;;
 let spawnFoodRadius = 200.;;
 let despawnFoodRadius = 300.;;
 
+let maxBushes = 15;;
+
+let bushes = ref [];;
+
 let generate_cord () = 
   let min, max = map in
   let x = Random.float (max.x -. min.x) +. min.x
@@ -28,14 +32,15 @@ let collision entity1 entity2 scaleRatio =
   then true
   else false;;
 
-class entity coord color masse = 
+class entity coord color masse computeRadius = 
   object 
     val mutable coordonees = (coord : coordonees)
     val mutable color = (color : color)
     val mutable masse = (masse : int)
+    val mutable computeRadius = computeRadius
     method getCoordonees = coordonees;
     method getColor = color;
-    method getRadius = if masse = 1 then 8 else 30 + int_of_float ((float_of_int masse)**0.4);
+    method getRadius = if computeRadius then 30 + int_of_float ((float_of_int masse)**0.4) else if masse = 1 then 8 else masse;
     method addCoordonees (c : coordonees) = coordonees <- { x = coordonees.x +. c.x; y = coordonees.y +. c.y};
     method addMasse quantity = masse <- masse + quantity;
     method getMasse = masse;
@@ -43,7 +48,7 @@ end;;
 
 class player = 
   object (self)
-    val mutable entities = ([new entity (generate_cord ()) (generate_color ()) 10 ] : entity list);
+    val mutable entities = ([new entity (generate_cord ()) (generate_color ()) 10 true] : entity list);
     val mutable score = (0 : int);
     val mutable foods = ([]: entity list);
 
@@ -52,11 +57,11 @@ class player =
 
     method getScore = score;
 
-    method getSpeed = 3.5 *. exp (-. float_of_int (score) /. 300.) +. 1.5;
+    method getSpeed = 3.5 *. exp (-. float_of_int (score) /. 500.) +. 2.;
 
     method getFoods = foods;
   
-    method getRatio = 150. /. float_of_int (self#getMainEntity#getRadius);
+    method getRatio = 4.;
     
     method getDrawFoodFun = fun x y color radius -> (set_color color; fill_circle x y radius);
     
@@ -79,7 +84,7 @@ class player =
       let x = (if Random.bool () then 1. else -1.) *. Random.float(spawnFoodRadius) +. playerCord.x
       and y = (if Random.bool () then 1. else -1.) *. Random.float(spawnFoodRadius) +. playerCord.y in
     if x > min.x && x < max.x && y > min.y && y < max.y then
-      let newFood = new entity {x = x; y = y;} (generate_color ()) 1;
+      let newFood = new entity {x = x; y = y;} (generate_color ()) 1 false;
       in foods <- newFood :: foods;
     i := !i + 1;
     done;
@@ -105,7 +110,7 @@ end;;
 let drawMainPlayer player =
   let mainEntity = player#getMainEntity in
   set_color mainEntity#getColor;
-  fill_circle (size_x() / 2) (size_y () / 2) mainEntity#getRadius;; 
+  fill_circle (size_x() / 2) (size_y () / 2) (mainEntity#getRadius);; 
 (*
 let affiche_entity entity =  
   set_color entity#getColor;
@@ -139,17 +144,17 @@ let spawn_buisson_feed coordonees rayon =
     end;; 
 *)
 
-let drawBush x y = let tableau_coord = Array.make 80 (0,0) and tableau_coord2 = Array.make 80 (0,0) and rayon = 60. and cote = 6. and compteur = ref 0 and alpha = 2.*.Float.pi/.40. in
+let drawBush x y radius = let tableau_coord = Array.make 80 (0,0) and tableau_coord2 = Array.make 80 (0,0) and cote = 6. and compteur = ref 0 and alpha = 2.*.Float.pi/.40. in
   for k=0 to 40-1 do
     let i = float_of_int k in
-    tableau_coord.(!compteur) <- (int_of_float(x +. rayon *. cos(i *. alpha)), int_of_float(y +. rayon*.sin(i *. alpha)));
-    tableau_coord2.(!compteur) <- (int_of_float(x +. (rayon -. 5.) *. cos(i *. alpha)), int_of_float(y +. (rayon -. 5.)*.sin(i *. alpha)));
+    tableau_coord.(!compteur) <- (x + int_of_float(radius *. cos(i *. alpha)), y + int_of_float(radius*.sin(i *. alpha)));
+    tableau_coord2.(!compteur) <- ( x +int_of_float((radius -. 5.) *. cos(i *. alpha)), y + int_of_float((radius -. 5.)*.sin(i *. alpha)));
     compteur := !compteur + 1;
-    let distance = (rayon*.cos(alpha/.2.) +. sqrt(cote*.cote -. (rayon*.sin(alpha/.2.))*.(rayon*.sin(alpha/.2.)))) in
-    tableau_coord.(!compteur) <- (int_of_float (x +. cos(i *. alpha +. alpha/.2.)*.distance),
-                                  int_of_float (y +. sin(i *. alpha +. alpha/.2.)*.distance));
-    tableau_coord2.(!compteur) <- (int_of_float (x +. cos(i *. alpha +. alpha/.2.)*.(distance -. 5.)),
-                                   int_of_float (y +. sin(i *. alpha +. alpha/.2.)*.(distance -. 5.)));
+    let distance = (radius*.cos(alpha/.2.) +. sqrt(cote*.cote -. (radius*.sin(alpha/.2.))*.(radius*.sin(alpha/.2.)))) in
+    tableau_coord.(!compteur) <- (x + int_of_float (cos(i *. alpha +. alpha/.2.)*.distance),
+                                  y + int_of_float (sin(i *. alpha +. alpha/.2.)*.distance));
+    tableau_coord2.(!compteur) <- (x + int_of_float (cos(i *. alpha +. alpha/.2.)*.(distance -. 5.)),
+                                   y + int_of_float (sin(i *. alpha +. alpha/.2.)*.(distance -. 5.)));
     compteur := !compteur + 1
   done;
   set_color (rgb 57 230 20);
@@ -160,10 +165,11 @@ let drawBush x y = let tableau_coord = Array.make 80 (0,0) and tableau_coord2 = 
 let drawEntities player entities drawFunc = 
   let mainEntityCord = player#getMainEntity#getCoordonees in
   List.iter (fun entity ->
+  let radius = entity#getRadius in
   let realX = int_of_float((entity#getCoordonees.x -. mainEntityCord.x) *. player#getRatio) + size_x () / 2
   and realY = int_of_float((entity#getCoordonees.y -. mainEntityCord.y) *. player#getRatio) + size_y() / 2 
-  in if realX > 0 && realX < size_x () && realY > 0 && realY < size_y () then
-    drawFunc realX realY entity#getColor entity#getRadius )
+  in if realX > 0 - radius && realX < size_x () + radius && realY > 0 - radius && realY < size_y () + radius then
+    drawFunc realX realY entity#getColor radius )
   entities;; 
 
 let drawGrid player =
@@ -185,6 +191,11 @@ while !j < size_y () do
   j := !j + gridSpacing;
 done;;
 
+let generate_bushes = 
+  for _i = 0 to maxBushes do
+    bushes := (new entity (generate_cord ()) 0 60 false)::!bushes
+  done;;
+
 let player = new player;;
 
 let rec event_loop () = 
@@ -201,6 +212,7 @@ let rec event_loop () =
   drawGrid player;
   drawEntities player player#getFoods player#getDrawFoodFun;
   drawMainPlayer player;
+  drawEntities player !bushes (fun x y _color radius -> drawBush x y (float_of_int radius)); 
   
   (* MONITORING *)
   moveto 0 0; draw_string (Printf.sprintf "Mouse position: %d,%d" mousex mousey);
