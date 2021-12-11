@@ -5,8 +5,8 @@ Random.init (int_of_float(Unix.time ()))
 type coordonees = {x: float; y: float};;
 let map = ({x = 0.; y = 0.;}, {x = 2000.; y = 2000.});;
 
-let maxFood = 100;;
-let spawnFoodRadius = 200.;;
+let maxFood = 200;;
+let spawnFoodRadius = 300.;;
 let despawnFoodRadius = 300.;;
 
 let maxBushes = 15;;
@@ -40,7 +40,7 @@ class entity coord color masse computeRadius =
     val mutable computeRadius = computeRadius
     method getCoordonees = coordonees;
     method getColor = color;
-    method getRadius = if computeRadius then 30 + int_of_float ((float_of_int masse)**0.4) else if masse = 1 then 8 else masse;
+    method getRadius = if computeRadius then 30 + int_of_float ((float_of_int masse)**0.5) else if masse = 1 then 8 else masse;
     method addCoordonees (c : coordonees) = coordonees <- { x = coordonees.x +. c.x; y = coordonees.y +. c.y};
     method addMasse quantity = masse <- masse + quantity;
     method getMasse = masse;
@@ -69,9 +69,9 @@ class player =
       let mainEntity = self#getMainEntity
     in let currentCord = mainEntity#getCoordonees
       and min, max = map
-    in let vecteur = {x = float_of_int (mousex - size_x () / 2); y = float_of_int (mousey - size_y () / 2)}
-  in let norme = sqrt(vecteur.x *. vecteur.x +. vecteur.y *. vecteur.y)
-  in let vecteurNormal = {x = vecteur.x *. self#getSpeed /. norme; y = vecteur.y *. self#getSpeed /. norme}
+    in let vecteur = {x = float_of_int (mousex - size_x () / 2); y = float_of_int (mousey - size_y () / 2)} in
+      let norme = sqrt(vecteur.x *. vecteur.x +. vecteur.y *. vecteur.y)
+  in let vecteurNormal = if abs_float vecteur.x < float_of_int (mainEntity#getRadius) && abs_float vecteur.y < float_of_int (mainEntity#getRadius)  then  {x = vecteur.x *. self#getSpeed /. 100.; y = vecteur.y *. self#getSpeed /. 100.}  else {x = vecteur.x *. self#getSpeed /. norme; y = vecteur.y *. self#getSpeed /. norme}
   in let x = if currentCord.x +. vecteurNormal.x > min.x then if currentCord.x +. vecteurNormal.x < max.x then vecteurNormal.x else max.x -. currentCord.x else min.x -. currentCord.x 
   and y = if currentCord.y +. vecteurNormal.y > min.y then if currentCord.y +. vecteurNormal.y < max.y then vecteurNormal.y else max.y -. currentCord.y else min.y -. currentCord.y
     in mainEntity#addCoordonees {x = x; y = y};
@@ -219,7 +219,7 @@ let rec event_loop () =
   let playerCord = player#getMainEntity#getCoordonees in
   moveto 0 100; draw_string (Printf.sprintf "Player position: %f,%f" playerCord.x  playerCord.y);
 
-
+  
   synchronize ();
   Unix.sleepf 0.05;
   event_loop ();;
