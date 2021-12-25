@@ -3,6 +3,8 @@ open Graphics;;
 Random.init (int_of_float(Unix.time ()))
 
 type coordonees = {x: float; y: float};;
+
+type nature = Player | Food | Bush;;
 let map = ({x = 0.; y = 0.;}, {x = 2000.; y = 2000.});;
 
 let maxFood = 200;;
@@ -32,40 +34,56 @@ let collision entity1 entity2 scaleRatio =
   then true
   else false;;
 
-class entity coord color masse computeRadius = 
+class entity coord color masse nature = 
   object 
+    val nature = (nature: nature)
     val mutable coordonees = (coord : coordonees)
+    val mutable speed = ({ x = 0.; y = 0.;} : coordonees)
     val mutable color = (color : color)
     val mutable masse = (masse : int)
-    val mutable computeRadius = computeRadius
     method getCoordonees = coordonees;
     method getColor = color;
-    method getRadius = if computeRadius then 30 + int_of_float ((float_of_int masse)**0.5) else if masse = 1 then 8 else masse;
-    method addCoordonees (c : coordonees) = coordonees <- { x = coordonees.x +. c.x; y = coordonees.y +. c.y};
+    method getRadius = match nature with
+      | Player -> 30 + int_of_float ((float_of_int masse)**0.5)
+      | Food -> 8
+      | Bush -> masse;
+
+    method setSpeed (newSpeed: coordonees ) = speed <- newSpeed;
+    method updateCoords deltat = 
+      let min, max = map in
+      let newX = match coordonees.x +. speed.x *. deltat with
+        | x when x < min.x -> min.x
+        | x when x > max.x -> max.x
+        | x -> x 
+      and newY = match coordonees.y +. speed.y *. deltat with
+        | y when y < min.y -> min.y
+        | y when y > max.y -> max.y
+        | y -> y 
+    in coordonees <- {x = newX; y = newY};
     method addMasse quantity = masse <- masse + quantity;
     method getMasse = masse;
 end;;
 
 class player = 
   object (self)
-    val mutable entities = ([new entity (generate_cord ()) (generate_color ()) 10 true] : entity list);
+    val mutable entities = ([new entity (generate_cord ()) (generate_color ()) 10 Player] : entity list);
     val mutable score = (0 : int);
     val mutable foods = ([]: entity list);
 
 
     method getMainEntity = List.hd entities;
 
+    method getEntites = entities;
+
     method getScore = score;
 
-    method getSpeed = 3.5 *. exp (-. float_of_int (score) /. 500.) +. 2.;
+    method getSpeed = 75. *. exp (-. float_of_int (score) /. 500.) +. 2.;
 
     method getFoods = foods;
   
     method getRatio = 4.;
-    
-    method getDrawFoodFun = fun x y color radius -> (set_color color; fill_circle x y radius);
-    
-    method updateCoords mousex mousey = 
+  
+    (*method updateCoords mousex mousey = 
       let mainEntity = self#getMainEntity
     in let currentCord = mainEntity#getCoordonees
       and min, max = map
@@ -74,7 +92,23 @@ class player =
   in let vecteurNormal = if abs_float vecteur.x < float_of_int (mainEntity#getRadius) && abs_float vecteur.y < float_of_int (mainEntity#getRadius)  then  {x = vecteur.x *. self#getSpeed /. 100.; y = vecteur.y *. self#getSpeed /. 100.}  else {x = vecteur.x *. self#getSpeed /. norme; y = vecteur.y *. self#getSpeed /. norme}
   in let x = if currentCord.x +. vecteurNormal.x > min.x then if currentCord.x +. vecteurNormal.x < max.x then vecteurNormal.x else max.x -. currentCord.x else min.x -. currentCord.x 
   and y = if currentCord.y +. vecteurNormal.y > min.y then if currentCord.y +. vecteurNormal.y < max.y then vecteurNormal.y else max.y -. currentCord.y else min.y -. currentCord.y
-    in mainEntity#addCoordonees {x = x; y = y};
+    in mainEntity#addCoordonees {x = x; y = y}; *)
+
+    method updateCoords deltat = 
+      let entities = self#getEntites 
+    in List.iter(fun entity -> entity#updateCoords deltat) entities;
+
+    method updatePlayerSpeed mousex mousey = 
+      let entities = self#getEntites 
+      and mainEntity = self#getMainEntity
+      and vector = {x = float_of_int (mousex - size_x () / 2); y = float_of_int (mousey - size_y () / 2)}
+    in let norme = sqrt(vector.x *. vector.x +. vector.y *. vector.y)
+  in let normalizedVector = match norme with
+  | norme when norme  < float_of_int mainEntity#getRadius *. 0.15 -> {x = 0.; y = 0.}
+  | norme when norme < float_of_int mainEntity#getRadius ->  {x = vector.x /. 100.; y = vector.y /. 100.}
+  | _ -> {x = vector.x  /. norme; y = vector.y /. norme}
+    in 
+    List.iter(fun entity -> entity#setSpeed { x = normalizedVector.x *. self#getSpeed; y = normalizedVector.y *. self#getSpeed }) entities;
 
   method generateFoods = 
     let i = ref (List.length foods);
@@ -84,7 +118,7 @@ class player =
       let x = (if Random.bool () then 1. else -1.) *. Random.float(spawnFoodRadius) +. playerCord.x
       and y = (if Random.bool () then 1. else -1.) *. Random.float(spawnFoodRadius) +. playerCord.y in
     if x > min.x && x < max.x && y > min.y && y < max.y then
-      let newFood = new entity {x = x; y = y;} (generate_color ()) 1 false;
+      let newFood = new entity {x = x; y = y;} (generate_color ()) 1 Food;
       in foods <- newFood :: foods;
     i := !i + 1;
     done;
@@ -103,7 +137,8 @@ class player =
     else true
     ) foods;
 
-    method updateScore entity quantity = score <- score + quantity; entity#addMasse quantity;
+  method updateScore entity quantity = score <- score + quantity; entity#addMasse quantity;
+
 end;;
 
 
@@ -193,24 +228,25 @@ done;;
 
 let generate_bushes = 
   for _i = 0 to maxBushes do
-    bushes := (new entity (generate_cord ()) 0 60 false)::!bushes
+    bushes := (new entity (generate_cord ()) 0 60 Bush)::!bushes
   done;;
 
 let player = new player;;
 
-let rec event_loop () = 
+let rec event_loop time = 
   clear_graph();
 
   (* UPDATES *)
-  let (mousex, mousey) = mouse_pos () in
-  player#updateCoords mousex mousey;
+  let newTime = Unix.gettimeofday () and (mousex, mousey) = mouse_pos () in
+  let deltaTime = newTime -. time in
+  player#updatePlayerSpeed mousex mousey;
+  player#updateCoords deltaTime;
   player#destroyFoods;
   player#handleFoodCollisions;
   player#generateFoods;
-
   (* DRAW *)
   drawGrid player;
-  drawEntities player player#getFoods player#getDrawFoodFun;
+  drawEntities player player#getFoods (fun x y color radius -> (set_color color; fill_circle x y radius));
   drawMainPlayer player;
   drawEntities player !bushes (fun x y _color radius -> drawBush x y (float_of_int radius)); 
   
@@ -219,15 +255,14 @@ let rec event_loop () =
   let playerCord = player#getMainEntity#getCoordonees in
   moveto 0 100; draw_string (Printf.sprintf "Player position: %f,%f" playerCord.x  playerCord.y);
 
-  
   synchronize ();
-  Unix.sleepf 0.05;
-  event_loop ();;
+  event_loop newTime;;
 
 let open_window () = 
   open_graph "";
   resize_window 800 600;
   set_window_title "Agar.ml";
+  display_mode false;
   auto_synchronize false;;
 
-let () = open_window (); event_loop ();; 
+let () = open_window (); event_loop (Unix.gettimeofday ());; 
