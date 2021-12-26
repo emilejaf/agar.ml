@@ -161,7 +161,7 @@ class player id entities =
       match (String.split_on_char ',' data) with
       | [] -> ()
       | playerData::entitesData -> 
-        let id, deltat = Scanf.sscanf playerData "%d %f" (fun id deltat -> (id, deltat)) in let 
+        let id, deltat = Scanf.sscanf playerData "%d %f" (fun id sentTime -> (id, (Unix.gettimeofday () -. sentTime))) in let 
           entities = List.map (fun entityData -> 
             let (coordonees, speed, masse, color) = Scanf.sscanf entityData "%f %f %f %f %d %d" (fun x y sx sy masse color -> ({x = x +. deltat *. sx; y = y +. deltat *. sy;}, {x = sx; y = sy}, masse, color))
               in let entity = new entity coordonees color masse Player in ignore (entity#setSpeed speed); entity) (List.filter (fun str -> str <> "") entitesData)
