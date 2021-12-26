@@ -15,6 +15,8 @@ let maxBushes = 15;;
 
 let bushes = ref [];;
 
+let other_players = ref [];;
+
 let generate_cord () = 
   let min, max = map in
   let x = Random.float (max.x -. min.x) +. min.x
@@ -48,7 +50,10 @@ class entity coord color masse nature =
       | Food -> 8
       | Bush -> masse;
 
-    method setSpeed (newSpeed: coordonees ) = speed <- newSpeed;
+    method getSpeed = speed;
+
+    method setSpeed (newSpeed: coordonees) =  let needUpdate = newSpeed.x <> speed.x && newSpeed.y <> speed.y in speed <- newSpeed; needUpdate;
+
     method updateCoords deltat = 
       let min, max = map in
       let newX = match coordonees.x +. speed.x *. deltat with
@@ -64,16 +69,19 @@ class entity coord color masse nature =
     method getMasse = masse;
 end;;
 
-class player = 
+class player id entities = 
   object (self)
-    val mutable entities = ([new entity (generate_cord ()) (generate_color ()) 10 Player] : entity list);
+    val mutable id = (id: int)
+    val mutable entities = (entities : entity list);
     val mutable score = (0 : int);
     val mutable foods = ([]: entity list);
+    val mutable needUpdate = (true: bool);
 
+    method getId = id;
 
     method getMainEntity = List.hd entities;
 
-    method getEntites = entities;
+    method getEntities = entities;
 
     method getScore = score;
 
@@ -94,21 +102,19 @@ class player =
   and y = if currentCord.y +. vecteurNormal.y > min.y then if currentCord.y +. vecteurNormal.y < max.y then vecteurNormal.y else max.y -. currentCord.y else min.y -. currentCord.y
     in mainEntity#addCoordonees {x = x; y = y}; *)
 
-    method updateCoords deltat = 
-      let entities = self#getEntites 
-    in List.iter(fun entity -> entity#updateCoords deltat) entities;
+    method updateCoords deltat = List.iter(fun entity -> entity#updateCoords deltat) entities;
 
     method updatePlayerSpeed mousex mousey = 
-      let entities = self#getEntites 
-      and mainEntity = self#getMainEntity
+      let mainEntity = self#getMainEntity
       and vector = {x = float_of_int (mousex - size_x () / 2); y = float_of_int (mousey - size_y () / 2)}
     in let norme = sqrt(vector.x *. vector.x +. vector.y *. vector.y)
-  in let normalizedVector = match norme with
-  | norme when norme  < float_of_int mainEntity#getRadius *. 0.15 -> {x = 0.; y = 0.}
-  | norme when norme < float_of_int mainEntity#getRadius ->  {x = vector.x /. 100.; y = vector.y /. 100.}
-  | _ -> {x = vector.x  /. norme; y = vector.y /. norme}
-    in 
-    List.iter(fun entity -> entity#setSpeed { x = normalizedVector.x *. self#getSpeed; y = normalizedVector.y *. self#getSpeed }) entities;
+    in let normalizedVector = match norme with
+    | norme when norme  < float_of_int mainEntity#getRadius *. 0.15 -> {x = 0.; y = 0.}
+    | norme when norme < float_of_int mainEntity#getRadius ->  {x = vector.x /. 100.; y = vector.y /. 100.}
+    | _ -> {x = vector.x  /. norme; y = vector.y /. norme}
+      in 
+      let result = List.exists (fun entity -> entity#setSpeed { x = normalizedVector.x *. self#getSpeed; y = normalizedVector.y *. self#getSpeed }) entities
+    in needUpdate <- result;
 
   method generateFoods = 
     let i = ref (List.length foods);
@@ -139,6 +145,31 @@ class player =
 
   method updateScore entity quantity = score <- score + quantity; entity#addMasse quantity;
 
+  method updateServer incomingData output = 
+    (* SENDING DATA *)
+    begin
+    if needUpdate then
+    let dataToSend = ref "" in
+    List.iter (fun entity -> let speed = entity#getSpeed and coordonees = entity#getCoordonees in dataToSend := !dataToSend ^ (Printf.sprintf "%0.2f %0.2f %0.2f %0.2f %d %d," coordonees.x coordonees.y speed.x speed.y entity#getMasse entity#getColor)) entities;
+    output_string output (!dataToSend ^ "\n");
+    flush output; 
+    needUpdate <- false;
+    end;
+
+    (* RECEIVING DATA *)
+    List.iter (fun data -> 
+      match (String.split_on_char ',' data) with
+      | [] -> ()
+      | playerData::entitesData -> 
+        let id = Scanf.sscanf playerData "%d" (fun x -> x) and 
+          entities = List.map (fun entityData -> 
+            let (coordonees, speed, masse, color) = Scanf.sscanf entityData "%f %f %f %f %d %d" (fun x y sx sy masse color -> ({x = x; y = y;}, {x = sx; y = sy}, masse, color))
+              in let entity = new entity coordonees color masse Player in ignore (entity#setSpeed speed); entity) (List.filter (fun str -> str <> "") entitesData)
+        in other_players := (new player id entities)::(List.filter (fun player -> player#getId <> id) !other_players);
+      )
+      (!incomingData);
+    incomingData := [];
+    
 end;;
 
 
@@ -160,7 +191,6 @@ let spawn_buisson_feed coordonees rayon =
       affiche_entity entity
     done;;
 *)
-
 (* let mange entity1 entity2 =
   if (collision entity1 entity2) then 
     begin
@@ -231,9 +261,12 @@ let generate_bushes =
     bushes := (new entity (generate_cord ()) 0 60 Bush)::!bushes
   done;;
 
-let player = new player;;
+let player = new player (-1) [new entity (generate_cord ()) (generate_color ()) 10 Player];;
 
-let rec event_loop time = 
+let incomingData = ref [];;
+
+
+let rec event_loop time (input, output)= 
   clear_graph();
 
   (* UPDATES *)
@@ -241,6 +274,11 @@ let rec event_loop time =
   let deltaTime = newTime -. time in
   player#updatePlayerSpeed mousex mousey;
   player#updateCoords deltaTime;
+
+  player#updateServer input output;
+
+  (* DRAWING *)
+
   player#destroyFoods;
   player#handleFoodCollisions;
   player#generateFoods;
@@ -248,7 +286,12 @@ let rec event_loop time =
   drawGrid player;
   drawEntities player player#getFoods (fun x y color radius -> (set_color color; fill_circle x y radius));
   drawMainPlayer player;
-  drawEntities player !bushes (fun x y _color radius -> drawBush x y (float_of_int radius)); 
+  drawEntities player !bushes (fun x y _color radius -> drawBush x y (float_of_int radius));
+  
+  List.iter (fun player -> 
+    player#updateCoords deltaTime;
+    drawEntities player (player#getEntities) (fun x y color radius -> set_color color; draw_circle x y radius)) (!other_players);
+  
   
   (* MONITORING *)
   moveto 0 0; draw_string (Printf.sprintf "Mouse position: %d,%d" mousex mousey);
@@ -256,7 +299,12 @@ let rec event_loop time =
   moveto 0 100; draw_string (Printf.sprintf "Player position: %f,%f" playerCord.x  playerCord.y);
 
   synchronize ();
-  event_loop newTime;;
+  event_loop newTime (input, output);;
+
+let open_connection () = 
+    let server_address = let addr = Unix.inet_addr_of_string "127.0.0.1" and port = 8086 in
+    Unix.ADDR_INET(addr, port) in 
+    Unix.open_connection server_address
 
 let open_window () = 
   open_graph "";
@@ -265,4 +313,17 @@ let open_window () =
   display_mode false;
   auto_synchronize false;;
 
-let () = open_window (); event_loop (Unix.gettimeofday ());; 
+
+
+let handle_incoming_data input = 
+  while true do
+    let data = input_line input in 
+    incomingData := data::!incomingData;
+  done;;
+
+
+let () = 
+    open_window (); 
+    let (input, output) = open_connection () in
+    ignore (Thread.create handle_incoming_data input);
+    event_loop (Unix.gettimeofday ()) (incomingData, output);; 
