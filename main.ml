@@ -52,7 +52,7 @@ class entity coord color masse nature =
 
     method getSpeed = speed;
 
-    method setSpeed (newSpeed: coordonees) =  let needUpdate = newSpeed.x <> speed.x && newSpeed.y <> speed.y in speed <- newSpeed; needUpdate;
+    method setSpeed (newSpeed: coordonees) =  let needUpdate = newSpeed.x <> speed.x || newSpeed.y <> speed.y in speed <- newSpeed; needUpdate;
 
     method updateCoords deltat = 
       let min, max = map in
@@ -149,7 +149,7 @@ class player id entities =
     (* SENDING DATA *)
     begin
     if needUpdate then
-    let dataToSend = ref "" in
+    let dataToSend = ref (Printf.sprintf "%f," (Unix.gettimeofday ())) in
     List.iter (fun entity -> let speed = entity#getSpeed and coordonees = entity#getCoordonees in dataToSend := !dataToSend ^ (Printf.sprintf "%0.2f %0.2f %0.2f %0.2f %d %d," coordonees.x coordonees.y speed.x speed.y entity#getMasse entity#getColor)) entities;
     output_string output (!dataToSend ^ "\n");
     flush output; 
@@ -161,9 +161,9 @@ class player id entities =
       match (String.split_on_char ',' data) with
       | [] -> ()
       | playerData::entitesData -> 
-        let id = Scanf.sscanf playerData "%d" (fun x -> x) and 
+        let id, deltat = Scanf.sscanf playerData "%d %f" (fun id deltat -> (id, deltat)) in let 
           entities = List.map (fun entityData -> 
-            let (coordonees, speed, masse, color) = Scanf.sscanf entityData "%f %f %f %f %d %d" (fun x y sx sy masse color -> ({x = x; y = y;}, {x = sx; y = sy}, masse, color))
+            let (coordonees, speed, masse, color) = Scanf.sscanf entityData "%f %f %f %f %d %d" (fun x y sx sy masse color -> ({x = x +. deltat *. sx; y = y +. deltat *. sy;}, {x = sx; y = sy}, masse, color))
               in let entity = new entity coordonees color masse Player in ignore (entity#setSpeed speed); entity) (List.filter (fun str -> str <> "") entitesData)
         in other_players := (new player id entities)::(List.filter (fun player -> player#getId <> id) !other_players);
       )
@@ -288,10 +288,9 @@ let rec event_loop time (input, output)=
   drawMainPlayer player;
   drawEntities player !bushes (fun x y _color radius -> drawBush x y (float_of_int radius));
   
-  List.iter (fun player -> 
-    player#updateCoords deltaTime;
-    drawEntities player (player#getEntities) (fun x y color radius -> set_color color; draw_circle x y radius)) (!other_players);
-  
+  List.iter (fun otherPlayer -> 
+    otherPlayer#updateCoords deltaTime;
+    drawEntities player (otherPlayer#getEntities) (fun x y color radius -> set_color color; fill_circle x y radius)) (!other_players);
   
   (* MONITORING *)
   moveto 0 0; draw_string (Printf.sprintf "Mouse position: %d,%d" mousex mousey);
@@ -302,7 +301,7 @@ let rec event_loop time (input, output)=
   event_loop newTime (input, output);;
 
 let open_connection () = 
-    let server_address = let addr = Unix.inet_addr_of_string "127.0.0.1" and port = 8086 in
+    let server_address = let addr = Unix.inet_addr_of_string "129.151.252.122" and port = 8086 in
     Unix.ADDR_INET(addr, port) in 
     Unix.open_connection server_address
 
@@ -316,10 +315,12 @@ let open_window () =
 
 
 let handle_incoming_data input = 
+  try 
   while true do
     let data = input_line input in 
     incomingData := data::!incomingData;
-  done;;
+  done;
+  with End_of_file -> ();;
 
 
 let () = 
