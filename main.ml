@@ -149,7 +149,7 @@ class player id entities =
     (* SENDING DATA *)
     begin
     if needUpdate then
-    let dataToSend = ref (Printf.sprintf "%f," (Unix.gettimeofday ())) in
+    let dataToSend = ref "" in
     List.iter (fun entity -> let speed = entity#getSpeed and coordonees = entity#getCoordonees in dataToSend := !dataToSend ^ (Printf.sprintf "%0.2f %0.2f %0.2f %0.2f %d %d," coordonees.x coordonees.y speed.x speed.y entity#getMasse entity#getColor)) entities;
     output_string output (!dataToSend ^ "\n");
     flush output; 
@@ -161,9 +161,9 @@ class player id entities =
       match (String.split_on_char ',' data) with
       | [] -> ()
       | playerData::entitesData -> 
-        let id, deltat = Scanf.sscanf playerData "%d %f" (fun id sentTime -> (id, (Unix.gettimeofday () -. sentTime))) in let 
-          entities = List.map (fun entityData -> 
-            let (coordonees, speed, masse, color) = Scanf.sscanf entityData "%f %f %f %f %d %d" (fun x y sx sy masse color -> ({x = x +. deltat *. sx; y = y +. deltat *. sy;}, {x = sx; y = sy}, masse, color))
+        let id = Scanf.sscanf playerData "%d" (fun x -> x)
+        in let entities = List.map (fun entityData -> 
+            let (coordonees, speed, masse, color) = Scanf.sscanf entityData "%f %f %f %f %d %d" (fun x y sx sy masse color -> ({x = x; y = y;}, {x = sx; y = sy}, masse, color))
               in let entity = new entity coordonees color masse Player in ignore (entity#setSpeed speed); entity) (List.filter (fun str -> str <> "") entitesData)
         in other_players := (new player id entities)::(List.filter (fun player -> player#getId <> id) !other_players);
       )

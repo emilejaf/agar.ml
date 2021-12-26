@@ -17,7 +17,7 @@ let execute (input, output) =
     List.iter (fun (id, (clientInput, clientOutput)) -> 
       if connectionID <> id then 
         begin 
-          output_string clientOutput ((Printf.sprintf "%d " connectionID) ^ incomingData ^ "\n"); 
+          output_string clientOutput ((Printf.sprintf "%d," connectionID) ^ incomingData ^ "\n"); 
           flush clientOutput;
         end;) !connections;
   done;
