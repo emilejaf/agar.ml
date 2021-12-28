@@ -13,9 +13,12 @@ let despawnFoodRadius = 300.;;
 
 let maxBushes = 15;;
 
+let maxBushesFood = 7;; 
+
 let bushes = ref [];;
 
 let other_players = ref [];;
+let bushesFood = ref [];;
 
 let generate_cord () = 
   let min, max = map in
@@ -191,6 +194,9 @@ let spawn_buisson_feed coordonees rayon =
       affiche_entity entity
     done;;
 *)
+
+
+
 (* let mange entity1 entity2 =
   if (collision entity1 entity2) then 
     begin
@@ -209,7 +215,7 @@ let spawn_buisson_feed coordonees rayon =
     end;; 
 *)
 
-let drawBush x y radius = let tableau_coord = Array.make 80 (0,0) and tableau_coord2 = Array.make 80 (0,0) and cote = 6. and compteur = ref 0 and alpha = 2.*.Float.pi/.40. in
+let drawBush x y radius color = let tableau_coord = Array.make 80 (0,0) and tableau_coord2 = Array.make 80 (0,0) and cote = 6. and compteur = ref 0 and alpha = 2.*.Float.pi/.40. in
   for k=0 to 40-1 do
     let i = float_of_int k in
     tableau_coord.(!compteur) <- (x + int_of_float(radius *. cos(i *. alpha)), y + int_of_float(radius*.sin(i *. alpha)));
@@ -222,10 +228,19 @@ let drawBush x y radius = let tableau_coord = Array.make 80 (0,0) and tableau_co
                                    y + int_of_float (sin(i *. alpha +. alpha/.2.)*.(distance -. 5.)));
     compteur := !compteur + 1
   done;
-  set_color (rgb 57 230 20);
-  fill_poly (tableau_coord);
-  set_color (rgb 57 255 20);
-  fill_poly (tableau_coord2);;
+  if (color = "green")
+    then
+      begin
+        set_color (rgb 57 230 20);
+        fill_poly (tableau_coord);
+        set_color (rgb 57 255 20);
+        fill_poly (tableau_coord2)
+      end
+    else
+      begin
+        set_color (rgb 240 125 115);
+        fill_poly (tableau_coord)
+      end;;
 
 let drawEntities player entities drawFunc = 
   let mainEntityCord = player#getMainEntity#getCoordonees in
@@ -256,14 +271,30 @@ while !j < size_y () do
   j := !j + gridSpacing;
 done;;
 
+let spawn_buisson_feed player bushesFood = 
+  let theta = Random.float (2.*.Float.pi) in
+    let newFood = new entity {x = float_of_int(bushesFood#getRadius)*.cos(theta); y = float_of_int(bushesFood#getRadius)*.sin(theta);} (generate_color ()) 9 false
+    and marge = Random.int 20 in 
+    for i = 0 to 40 + marge do
+      newFood#addCoordonees ({x = float_of_int((bushesFood#getRadius+ i)) *. cos(theta); y = float_of_int((bushesFood#getRadius+i))*.sin(theta)}); 
+      drawEntities player [newFood] player#getDrawFoodFun
+    done;;
+
 let generate_bushes = 
   for _i = 0 to maxBushes do
     bushes := (new entity (generate_cord ()) 0 60 Bush)::!bushes
   done;;
 
+<<<<<<< Updated upstream
 let player = new player (-1) [new entity (generate_cord ()) (generate_color ()) 10 Player];;
 
 let incomingData = ref [];;
+=======
+let generate_bushesFood =
+  for _i = 0 to maxBushesFood -1 do
+    bushesFood := (new entity (generate_cord ()) 0 60 false)::!bushesFood
+  done;
+  bushesFood := (new entity ({x=100.;y=100.}) 0 60 false)::!bushesFood;;
 
 
 let rec event_loop time (input, output)= 
@@ -286,12 +317,19 @@ let rec event_loop time (input, output)=
   drawGrid player;
   drawEntities player player#getFoods (fun x y color radius -> (set_color color; fill_circle x y radius));
   drawMainPlayer player;
+<<<<<<< Updated upstream
   drawEntities player !bushes (fun x y _color radius -> drawBush x y (float_of_int radius));
   
   List.iter (fun otherPlayer -> 
     otherPlayer#updateCoords deltaTime;
     drawEntities player (otherPlayer#getEntities) (fun x y color radius -> set_color color; fill_circle x y radius)) (!other_players);
   
+=======
+  drawEntities player !bushes (fun x y _color radius -> drawBush x y (float_of_int radius) "green");
+  drawEntities player !bushesFood (fun x y _color radius -> drawBush x y (float_of_int radius) "red"); 
+  spawn_buisson_feed player (List.hd (!bushesFood)); 
+
+>>>>>>> Stashed changes
   (* MONITORING *)
   moveto 0 0; draw_string (Printf.sprintf "Mouse position: %d,%d" mousex mousey);
   let playerCord = player#getMainEntity#getCoordonees in
