@@ -7,21 +7,27 @@ open Unix;;
 let connections = ref [];;
 let taille = ref 0;;
 
+(* On coupe la connection avec le client et on notifie les autres *)
+let closeConnection connectId output = 
+  connections := List.filter (fun (id, _) -> id <> connectId) !connections; 
+  List.iter (fun (id, (clientInput, clientOutput)) -> output_string clientOutput (Printf.sprintf "DISCONNECT %d" connectId); flush clientOutput;) !connections; 
+  close_out output; 
+  Thread.exit ();;
+
 let execute (input, output) =
   let connectionID = !taille in 
   connections := (connectionID, (input, output))::!connections;
   taille := !taille + 1;
   try 
   while true do
+    (* On retransmet les informations envoyés par le client aux autres clients *)
     let incomingData = input_line input in
     List.iter (fun (id, (clientInput, clientOutput)) -> 
       if connectionID <> id then 
-        begin 
-          output_string clientOutput ((Printf.sprintf "%d," connectionID) ^ incomingData ^ "\n"); 
-          flush clientOutput;
-        end;) !connections;
+        begin output_string clientOutput ((Printf.sprintf "UPDATE %d," connectionID) ^ incomingData ^ "\n"); 
+          flush clientOutput end) !connections;
   done;
-with End_of_file -> () | Sys_error "Connection reset by peer" -> connections := List.filter (fun (id, _) -> id <> connectionID) !connections; close_out output; Thread.exit ();;
+with End_of_file -> closeConnection connectionID output | Sys_error "Connection reset by peer" -> closeConnection connectionID output;;
 let init () = 
   let port = 8086 in
   let socket_address = ADDR_INET (inet_addr_of_string "0.0.0.0", port) in
