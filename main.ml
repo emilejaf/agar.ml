@@ -5,24 +5,18 @@ exception InvalidResponseType of string;;
 Random.init (int_of_float(Unix.time ()))
 
 type coordonees = {x: float; y: float};;
-
 type nature = Player | Food | Bush;;
-
+type state = Splitting | Assembling | MainEntity | Idle;;
 let map = ({x = 0.; y = 0.;}, {x = 2000.; y = 2000.});;
-
 let maxFood = 250;;
 let spawnFoodRadius = 300.;;
 let despawnFoodRadius = 350.;;
-
 let maxBushes = 15;;
 let maxBushesFood = 7;; 
 
 (* Cette liste stocke toutes les informations reçus entre chaque frame *)
 let incomingData = ref [];;
-
-
 let bushes = ref [];;
-
 let other_players = ref [];;
 let bushesFood = ref [];;
 
@@ -45,24 +39,72 @@ let collision entity1 entity2 scaleRatio =
   then true
   else false;;
 
-class entity coord color masse nature = 
-  object 
+let mange entity target scaleRatio =
+  if (collision entity target scaleRatio) then 
+    begin
+      let r1 = float_of_int(entity#getRadius) and r2 = float_of_int(target#getRadius) and
+      distance = sqrt((entity#getCoordonees.x -. target#getCoordonees.x) *. (entity#getCoordonees.x -. target#getCoordonees.x) +.
+      (entity#getCoordonees.y -. target#getCoordonees.y) *. (entity#getCoordonees.y -. target#getCoordonees.y)) in 
+      let d = (r1*.r1 -. r2*.r2 +. distance *. distance) /. (2. *. distance) in
+      let h = sqrt(r1*.r1 -. d*.d) in
+      let aire = r1 *. r1 *. acos(d/.r1) +. r2*.r2*.acos((distance-.d)/.r2) -. h*.distance in
+      ((Float.pi *. r2 *. r2) /. aire) >= 0.80;
+    end
+  else false;;
+
+class entity id coord color masse nature state = 
+  object (self)
+
+    val id = (id: int)
     val nature = (nature: nature)
     val mutable coordonees = (coord : coordonees)
     val mutable speed = ({ x = 0.; y = 0.;} : coordonees)
     val mutable color = (color : color)
     val mutable masse = (masse : int)
+    val mutable state = (state: state);
+    val mutable timeToNextState = (0. : float);
+    val mutable needUpdate = (false: bool);
+
+    method getState = state;
+    method getTimeToNextState = timeToNextState;
+    method setTimeToNextState (newTime : float) = timeToNextState <- newTime;
+
     method getCoordonees = coordonees;
     method getColor = color;
     method getRadius = match nature with
-      | Player -> 30 + int_of_float ((float_of_int masse)**0.5)
+      | Player -> 30 + int_of_float ((float_of_int masse)**0.7)
       | Food -> 8
       | Bush -> masse;
 
     method getSpeed = speed;
+    method setSpeed newSpeed = speed <- newSpeed;
+
+    method getId = id;
+
+    method needUpdate = needUpdate;
+
+    method updateState deltat (player: player) = 
+      
+      if timeToNextState > deltat then timeToNextState <- timeToNextState -. deltat else timeToNextState <- 0.;
+
+      match state with
+      | Idle -> ();
+      | MainEntity -> ();
+      | Splitting -> if self#getTimeToNextState <= 0. then state <- Assembling;
+      | Assembling -> let mainEntity = player#getMainEntity in if mange mainEntity self player#getRatio then 
+        begin
+          player#updateScore mainEntity (self#getMasse);
+          player#removeEntityById self#getId;
+        end
+      else ();
 
     (* on notifie les autres clients si le joueur change de direction *)
-    method setSpeed (newSpeed: coordonees) =  let needUpdate = newSpeed.x <> speed.x || newSpeed.y <> speed.y in speed <- newSpeed; needUpdate;
+    method updateSpeed (newSpeed: coordonees) deltat mainEntityPosition = 
+      match state with
+      | MainEntity -> needUpdate <- newSpeed.x <> speed.x || newSpeed.y <> speed.y; speed <- newSpeed; 
+      | Splitting -> speed <- {x = speed.x +. deltat *. (-50.); y = speed.y +. deltat *. (-50.)};
+      | Assembling -> speed <- {x = (mainEntityPosition.x -. coordonees.x) /. 2.5; y = (mainEntityPosition.y -. coordonees.y) /. 2.5};
+      | Idle -> ();
 
     (* modifie les coordonnées de l'entité sans sortir de la map *)
     method updateCoords deltat = 
@@ -78,11 +120,11 @@ class entity coord color masse nature =
     in coordonees <- {x = newX; y = newY};
 
     method addMasse quantity = masse <- masse + quantity;
-
     method getMasse = masse;
-end;;
+    method setMasse newMasse = masse <- newMasse;
+end
 
-class player id entities = 
+and player id entities = 
   object (self)
     val mutable id = (id: int)
     val mutable entities = (entities : entity list);
@@ -90,11 +132,16 @@ class player id entities =
     val mutable foods = ([]: entity list);
     val mutable needUpdate = (true: bool);
 
+
     method getId = id;
 
-    method getMainEntity = List.hd entities;
+    method getMainEntity = List.hd (List.filter (fun entity -> entity#getState = MainEntity) entities);
 
     method getEntities = entities;
+
+    method addEntity entity = entities <- entity::entities;
+
+    method removeEntityById id = entities <- List.filter (fun entity -> entity#getId <> id) entities;
 
     method getScore = score;
 
@@ -106,17 +153,17 @@ class player id entities =
   
     method updateCoords deltat = List.iter(fun entity -> entity#updateCoords deltat) entities;
 
-    method updatePlayerSpeed mousex mousey = 
+    method updatePlayerSpeed mousex mousey deltat = 
       let mainEntity = self#getMainEntity
       and vector = {x = float_of_int (mousex - size_x () / 2); y = float_of_int (mousey - size_y () / 2)}
     in let norme = sqrt(vector.x *. vector.x +. vector.y *. vector.y)
     in let normalizedVector = match norme with
-    | norme when norme  < float_of_int mainEntity#getRadius *. 0.15 -> {x = 0.; y = 0.}
+    | norme when norme < float_of_int mainEntity#getRadius *. 0.15 -> {x = 0.; y = 0.}
     | norme when norme < float_of_int mainEntity#getRadius ->  {x = vector.x /. 100.; y = vector.y /. 100.}
     | _ -> {x = vector.x  /. norme; y = vector.y /. norme}
       in 
-      let result = List.exists (fun entity -> entity#setSpeed { x = normalizedVector.x *. self#getSpeed; y = normalizedVector.y *. self#getSpeed }) entities
-    in needUpdate <- result;
+      List.iter (fun entity -> entity#updateSpeed { x = normalizedVector.x *. self#getSpeed; y = normalizedVector.y *. self#getSpeed } deltat mainEntity#getCoordonees) entities;
+      needUpdate <- List.exists (fun entity -> entity#needUpdate) entities;
 
   method generateFoods = 
     let i = ref (List.length foods);
@@ -126,23 +173,18 @@ class player id entities =
       let x = (if Random.bool () then 1. else -1.) *. Random.float(spawnFoodRadius) +. playerCord.x
       and y = (if Random.bool () then 1. else -1.) *. Random.float(spawnFoodRadius) +. playerCord.y in
     if x > min.x && x < max.x && y > min.y && y < max.y then
-      let newFood = new entity {x = x; y = y;} (generate_color ()) 1 Food;
+      let newFood = new entity (-1) {x = x; y = y;} (generate_color ()) 1 Food Idle;
       in foods <- newFood :: foods;
     i := !i + 1;
     done;
 
-  method destroyFoods = 
-    foods <- List.filter (fun food -> 
+  method destroyFoods = foods <- List.filter (fun food -> 
       let foodCord = food#getCoordonees
       and playerCord = self#getMainEntity#getCoordonees
         in if abs_float (foodCord.x -. playerCord.x) > despawnFoodRadius || abs_float (foodCord.y -. playerCord.y) > despawnFoodRadius then false else true) foods;
 
   method handleFoodCollisions = foods <- List.filter (fun food -> 
-    let mainEntity = self#getMainEntity
-    in if collision mainEntity food self#getRatio then
-      let () = self#updateScore mainEntity food#getMasse
-      in false
-    else true
+    (List.exists (fun entity -> if collision entity food self#getRatio then let () = self#updateScore entity food#getMasse in true else false) entities) <> true
     ) foods;
 
   method updateScore entity quantity = score <- score + quantity; entity#addMasse quantity;
@@ -167,14 +209,27 @@ class player id entities =
         in match responseType with 
           | "UPDATE" -> let entities = List.map (fun entityData -> 
             let (coordonees, speed, masse, color) = Scanf.sscanf entityData "%f %f %f %f %d %d" (fun x y sx sy masse color -> ({x = x; y = y;}, {x = sx; y = sy}, masse, color))
-              in let entity = new entity coordonees color masse Player in ignore (entity#setSpeed speed); entity) (List.filter (fun str -> str <> "") entitesData)
+              in let entity = new entity (-1) coordonees color masse Player Idle in ignore (entity#setSpeed speed); entity) (List.filter (fun str -> str <> "") entitesData)
             in other_players := (new player id entities)::(List.filter (fun player -> player#getId <> id) !other_players);
           | "DISCONNECT" -> other_players := List.filter (fun p -> p#getId <> id) !other_players;
           | _ -> raise (InvalidResponseType responseType);
       )
       (!incomingData);
     incomingData := [];
-    
+
+
+    (* SPLITTINGS *)
+    method split =
+      let mainEntity = self#getMainEntity in
+      (if mainEntity#getMasse >= 50 && mainEntity#getState = MainEntity then 
+        let masse = mainEntity#getMasse / 4 and id = List.length entities
+        in mainEntity#setMasse (mainEntity#getMasse - masse);
+        let newEntity = new entity id {x = mainEntity#getCoordonees.x; y = mainEntity#getCoordonees.y} (mainEntity#getColor) masse Player Splitting in
+        newEntity#setTimeToNextState 1.;
+        let vector = mainEntity#getSpeed in let norme = sqrt(vector.x *. vector.x +. vector.y *. vector.y)
+        in let entitySpeed = {x = vector.x *. 120. /. norme; y = vector.y *. 120. /. norme}
+        in newEntity#setSpeed entitySpeed;
+        self#addEntity newEntity);
 end;;
 
 
@@ -194,26 +249,6 @@ let spawn_buisson_feed coordonees rayon =
       fill_circle (int_of_float(entity#getCoordonees.x)) (int_of_float(entity#getCoordonees.y)) (entity#getRadius);
     done;; *)
 
-
-
-
-(* let mange entity1 entity2 =
-  if (collision entity1 entity2) then 
-    begin
-      let r1 = float_of_int(entity1#getRadius) and r2 = float_of_int(entity2#getRadius) and
-      distance = sqrt((entity1#getCoordonees.x -. entity2#getCoordonees.x) *. (entity1#getCoordoneess.x -. entity2#getCoordonees.x) +.
-      (entity1#getCoordonees.y -. entity2#getCoordonees.y) *. (entity1#getCoordonees.y -. entity2#getCoordonees.y)) in 
-      let d = (r1*.r1 -. r2*.r2 +. distance *. distance) /. (2. *. distance) in
-      let h = sqrt(r1*.r1 -. d*.d) in
-      let aire = r1 *. r1 *. acos(d/.r1) +. r2*.r2*.acos((distance-.d)/.r2) -. h*.distance in
-      if (r1<r2) then 
-        if (((Float.pi *. r1 *. r1) /. aire) >= 0.80) then ()(* supprime entity1*)
-        else ()
-      else
-        if (((Float.pi *. r2 *. r2) /. aire) >= 0.80) then () (* Supprime entity2*)
-        else ()
-    end;; 
-*)
 
 let drawBush x y radius color = let tableau_coord = Array.make 80 (0,0) and tableau_coord2 = Array.make 80 (0,0) and cote = 6. and compteur = ref 0 and alpha = 2.*.Float.pi/.40. in
   for k=0 to 40-1 do
@@ -281,15 +316,15 @@ done;;
     done;; *)
 
 let generate_bushes = 
-  for _i = 0 to maxBushes do
-    bushes := (new entity (generate_cord ()) 0 60 Bush)::!bushes
+  for i = 0 to maxBushes do
+    bushes := (new entity i (generate_cord ()) 0 60 Bush Idle)::!bushes
   done;;
 
-let player = new player (-1) [new entity (generate_cord ()) (generate_color ()) 10 Player];;
+let player = new player (-1) [new entity 0 (generate_cord ()) (generate_color ()) 10 Player MainEntity];;
 
 let generate_bushesFood =
-  for _i = 0 to maxBushesFood do
-    bushesFood := (new entity (generate_cord ()) 0 60 Bush)::!bushesFood
+  for i = 0 to maxBushesFood do
+    bushesFood := (new entity i (generate_cord ()) 0 60 Bush Idle)::!bushesFood
   done;;
 
 
@@ -299,8 +334,17 @@ let rec event_loop time serverData =
   (* UPDATES *)
   let newTime = Unix.gettimeofday () and (mousex, mousey) = mouse_pos () in
   let deltaTime = newTime -. time in
-  player#updatePlayerSpeed mousex mousey;
+
+  List.iter (fun entity -> entity#updateState deltaTime player) player#getEntities;
+
+  player#updatePlayerSpeed mousex mousey deltaTime;
   player#updateCoords deltaTime;
+
+  (if key_pressed () then let key = read_key () in 
+    match key with 
+    | 'x' -> player#split;
+    | _ -> ();
+  );
 
   (* MONITORING *)
   moveto 5 (size_y () - 15);
@@ -310,7 +354,7 @@ let rec event_loop time serverData =
   | Some (input, output) -> player#updateServer input output; draw_string "Multiplayer");
 
   let playerCord = player#getMainEntity#getCoordonees in
-  moveto 5 (size_y () - 30); draw_string (Printf.sprintf "Position: %0.0f, %0.0f" playerCord.x  playerCord.y);
+  moveto 5 (size_y () - 30); draw_string (Printf.sprintf "Position : %0.0f, %0.0f" playerCord.x  playerCord.y);
 
   (match serverData with
     | None -> ()
@@ -326,6 +370,7 @@ let rec event_loop time serverData =
 
   drawEntities player player#getFoods (fun x y color radius -> (set_color color; fill_circle x y radius));
 
+  drawEntities player (List.filter (fun entity -> entity#getState <> MainEntity) player#getEntities) (fun x y color radius -> (set_color color; fill_circle x y radius));
   drawMainPlayer player;
   
   drawEntities player !bushes (fun x y _color radius -> drawBush x y (float_of_int radius) "green");
