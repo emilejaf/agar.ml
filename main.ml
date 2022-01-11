@@ -6,7 +6,7 @@ Random.init (int_of_float(Unix.time ()))
 
 type coordonees = {x: float; y: float};;
 type nature = Player | Food | Bush;;
-type state = Splitting | Assembling | MainEntity | Idle;;
+type state = Splitting | Assembling | Idle;;
 let map = ({x = 0.; y = 0.;}, {x = 2000.; y = 2000.});;
 let maxFood = 250;;
 let spawnFoodRadius = 300.;;
@@ -22,10 +22,10 @@ let bushesFood = ref [];;
 
 let generate_cord () = 
   let min, max = map in
-  let x = Random.float (max.x -. min.x) +. min.x
-  and y = Random.float (max.y -. min.y) +. min.y
+  let _x = Random.float (max.x -. min.x) +. min.x
+  and _y = Random.float (max.y -. min.y) +. min.y
   in
-  {x = x; y = y};;  
+  {x = 0.; y = 0.};;  
 
 let generate_color () = 
   let r = Random.int (255) + 1
@@ -33,24 +33,12 @@ let generate_color () =
   and b = Random.int (255) + 1
 in rgb r g b;;
 
-let collision entity1 entity2 scaleRatio = 
-  if (sqrt((entity1#getCoordonees.x -. entity2#getCoordonees.x) *. (entity1#getCoordonees.x -. entity2#getCoordonees.x)+.
-    (entity1#getCoordonees.y -. entity2#getCoordonees.y) *. (entity1#getCoordonees.y -. entity2#getCoordonees.y)) *. scaleRatio) < float_of_int ((entity1#getRadius + entity2#getRadius))
-  then true
-  else false;;
+let collision entity1 entity2 scaleRatio = sqrt((entity1#getCoordonees.x -. entity2#getCoordonees.x)**2. +. (entity1#getCoordonees.y -. entity2#getCoordonees.y)**2.) *. scaleRatio < float_of_int (entity1#getRadius + entity2#getRadius);;
 
 let mange entity target scaleRatio =
-  if (collision entity target scaleRatio) then 
-    begin
-      let r1 = float_of_int(entity#getRadius) and r2 = float_of_int(target#getRadius) and
-      distance = sqrt((entity#getCoordonees.x -. target#getCoordonees.x) *. (entity#getCoordonees.x -. target#getCoordonees.x) +.
-      (entity#getCoordonees.y -. target#getCoordonees.y) *. (entity#getCoordonees.y -. target#getCoordonees.y)) in 
-      let d = (r1*.r1 -. r2*.r2 +. distance *. distance) /. (2. *. distance) in
-      let h = sqrt(r1*.r1 -. d*.d) in
-      let aire = r1 *. r1 *. acos(d/.r1) +. r2*.r2*.acos((distance-.d)/.r2) -. h*.distance in
-      ((Float.pi *. r2 *. r2) /. aire) >= 0.80;
-    end
-  else false;;
+  let distance = sqrt ((entity#getCoordonees.x -. target#getCoordonees.x)**2. +. (entity#getCoordonees.y -. target#getCoordonees.y)**2.) in
+  
+  float_of_int entity#getRadius >= distance *. scaleRatio && float_of_int entity#getRadius >= float_of_int target#getRadius *. 1.3
 
 class entity id coord color masse nature state = 
   object (self)
@@ -83,27 +71,28 @@ class entity id coord color masse nature state =
 
     method needUpdate = needUpdate;
 
+    method setState newState = state <- newState;
+
     method updateState deltat (player: player) = 
       
       if timeToNextState > deltat then timeToNextState <- timeToNextState -. deltat else timeToNextState <- 0.;
-
       match state with
       | Idle -> ();
-      | MainEntity -> ();
       | Splitting -> if self#getTimeToNextState <= 0. then state <- Assembling;
-      | Assembling -> let mainEntity = player#getMainEntity in if mange mainEntity self player#getRatio then 
-        begin
-          player#updateScore mainEntity (self#getMasse);
+      | Assembling -> 
+        try 
+          let eater =  List.hd (List.sort (fun e1 e2 -> e2#getMasse - e1#getMasse) 
+          (List.filter(fun entity -> entity#getId <> self#getId && mange entity self player#getRatio) player#getEntities));
+          in player#addScore eater (self#getMasse);
           player#removeEntityById self#getId;
-        end
-      else ();
+        with Failure _ -> ();
 
     (* on notifie les autres clients si le joueur change de direction *)
     method updateSpeed (newSpeed: coordonees) deltat mainEntityPosition = 
       match state with
-      | MainEntity -> needUpdate <- newSpeed.x <> speed.x || newSpeed.y <> speed.y; speed <- newSpeed; 
+      | Idle when nature = Player -> needUpdate <- newSpeed.x <> speed.x || newSpeed.y <> speed.y; speed <- newSpeed; 
       | Splitting -> speed <- {x = speed.x +. deltat *. (-50.); y = speed.y +. deltat *. (-50.)};
-      | Assembling -> speed <- {x = (mainEntityPosition.x -. coordonees.x) /. 2.5; y = (mainEntityPosition.y -. coordonees.y) /. 2.5};
+      | Assembling -> speed <- {x = (mainEntityPosition.x -. coordonees.x) /. 4.; y = (mainEntityPosition.y -. coordonees.y) /. 4.};
       | Idle -> ();
 
     (* modifie les coordonnées de l'entité sans sortir de la map *)
@@ -131,17 +120,26 @@ and player id entities =
     val mutable score = (0 : int);
     val mutable foods = ([]: entity list);
     val mutable needUpdate = (true: bool);
+    val mutable entityIdCounter = (1 : int);
+    val mutable eaten = [];
 
-
-    method getId = id;
-
-    method getMainEntity = List.hd (List.filter (fun entity -> entity#getState = MainEntity) entities);
+    method getId = id
+    method getMainEntity = List.hd entities
 
     method getEntities = entities;
 
-    method addEntity entity = entities <- entity::entities;
+    method addEntity entity = entities <- entities@[entity];
 
     method removeEntityById id = entities <- List.filter (fun entity -> entity#getId <> id) entities;
+    
+    method updateMainEntity =
+      if List.length entities > 0 then
+        begin
+        let newEntities = (List.sort (fun e1 e2 -> e2#getMasse - e1#getMasse) entities) in
+          let candidate = List.hd newEntities in
+          candidate#setState Idle;
+          entities <- newEntities;
+        end;
 
     method getScore = score;
 
@@ -184,20 +182,22 @@ and player id entities =
         in if abs_float (foodCord.x -. playerCord.x) > despawnFoodRadius || abs_float (foodCord.y -. playerCord.y) > despawnFoodRadius then false else true) foods;
 
   method handleFoodCollisions = foods <- List.filter (fun food -> 
-    (List.exists (fun entity -> if collision entity food self#getRatio then let () = self#updateScore entity food#getMasse in true else false) entities) <> true
+    (List.exists (fun entity -> if collision entity food self#getRatio then let () = self#addScore entity food#getMasse in true else false) entities) <> true
     ) foods;
 
-  method updateScore entity quantity = score <- score + quantity; entity#addMasse quantity;
+  method addScore entity quantity = score <- score + quantity; entity#addMasse quantity; needUpdate <- true;
+
+  method removeScore quantity = score <- score - quantity; needUpdate <- true;
 
   method updateServer incomingData output = 
     (* SENDING DATA *)
     begin
-    if needUpdate then
-    let dataToSend = ref "" in
-    List.iter (fun entity -> let speed = entity#getSpeed and coordonees = entity#getCoordonees in dataToSend := !dataToSend ^ (Printf.sprintf "%0.2f %0.2f %0.2f %0.2f %d %d," coordonees.x coordonees.y speed.x speed.y entity#getMasse entity#getColor)) entities;
-    output_string output (!dataToSend ^ "\n");
-    flush output; 
-    needUpdate <- false;
+      if needUpdate then
+      let dataToSend = ref (Printf.sprintf "UPDATE %d," id) in
+      List.iter (fun entity -> let id = entity#getId and speed = entity#getSpeed and coordonees = entity#getCoordonees in dataToSend := !dataToSend ^ (Printf.sprintf "%d %0.2f %0.2f %0.2f %0.2f %d %d,"id coordonees.x coordonees.y speed.x speed.y entity#getMasse entity#getColor)) entities;
+      output_string output (!dataToSend ^ "\n");
+      flush output; 
+      needUpdate <- false;
     end;
 
     (* RECEIVING DATA *)
@@ -205,31 +205,63 @@ and player id entities =
       match (String.split_on_char ',' data) with
       | [] -> ()
       | playerData::entitesData -> 
-        let (responseType, id) = Scanf.sscanf playerData "%s %d" (fun x y -> (x, y))
-        in match responseType with 
-          | "UPDATE" -> let entities = List.map (fun entityData -> 
-            let (coordonees, speed, masse, color) = Scanf.sscanf entityData "%f %f %f %f %d %d" (fun x y sx sy masse color -> ({x = x; y = y;}, {x = sx; y = sy}, masse, color))
-              in let entity = new entity (-1) coordonees color masse Player Idle in ignore (entity#setSpeed speed); entity) (List.filter (fun str -> str <> "") entitesData)
-            in other_players := (new player id entities)::(List.filter (fun player -> player#getId <> id) !other_players);
-          | "DISCONNECT" -> other_players := List.filter (fun p -> p#getId <> id) !other_players;
+        let (responseType, playerId) = Scanf.sscanf playerData "%s %d" (fun x y -> (x, y))
+      in match responseType with 
+          | "UPDATE" -> 
+            let entities = List.filter (fun entity -> not (List.exists (fun (pId, eId) -> (pId = playerId && eId = entity#getId)) eaten)) (List.map (fun entityData -> 
+            let (entityId, coordonees, speed, masse, color) = Scanf.sscanf entityData "%d %f %f %f %f %d %d" (fun id x y sx sy masse color -> (id, {x = x; y = y;}, {x = sx; y = sy}, masse, color))
+              in
+              let entity = new entity entityId coordonees color masse Player Idle in ignore (entity#setSpeed speed); entity) (List.filter (fun str -> str <> "") entitesData))
+            in other_players := (new player playerId entities)::(List.filter (fun player -> player#getId <> playerId) !other_players);
+          | "DISCONNECT" -> other_players := List.filter (fun p -> p#getId <> playerId) !other_players;
+          | "EAT" -> 
+            let entityId, _eaterId = Scanf.sscanf (List.hd entitesData) "%d %d" (fun id eaterId -> (id, eaterId)) in
+            (match id with
+            | id when id = playerId -> let isMainEntityEaten = entityId = self#getMainEntity#getId and masse = (List.find (fun entity -> entity#getId = entityId) entities)#getMasse in
+                self#removeEntityById entityId;
+                self#removeScore masse;
+                if List.length entities = 0 then print_endline "you lose" else (if isMainEntityEaten then self#updateMainEntity);
+
+            | _ -> let otherPlayer = List.find (fun p -> p#getId = playerId) !other_players in otherPlayer#removeEntityById entityId)
           | _ -> raise (InvalidResponseType responseType);
       )
       (!incomingData);
     incomingData := [];
 
 
-    (* SPLITTINGS *)
-    method split =
-      let mainEntity = self#getMainEntity in
-      (if mainEntity#getMasse >= 50 && mainEntity#getState = MainEntity then 
-        let masse = mainEntity#getMasse / 4 and id = List.length entities
-        in mainEntity#setMasse (mainEntity#getMasse - masse);
-        let newEntity = new entity id {x = mainEntity#getCoordonees.x; y = mainEntity#getCoordonees.y} (mainEntity#getColor) masse Player Splitting in
-        newEntity#setTimeToNextState 1.;
-        let vector = mainEntity#getSpeed in let norme = sqrt(vector.x *. vector.x +. vector.y *. vector.y)
-        in let entitySpeed = {x = vector.x *. 120. /. norme; y = vector.y *. 120. /. norme}
-        in newEntity#setSpeed entitySpeed;
-        self#addEntity newEntity);
+  (* SPLITTINGS *)
+  method split =
+    let mainEntity = self#getMainEntity in
+    (if mainEntity#getMasse >= 50 && List.for_all (fun entity -> mainEntity#getMasse * 3 / 4 > entity#getMasse  ) (List.tl entities) then 
+      let masse = mainEntity#getMasse / 4 and id = entityIdCounter
+      in entityIdCounter <- entityIdCounter + 1;
+      mainEntity#setMasse (mainEntity#getMasse - masse);
+      let newEntity = new entity id {x = mainEntity#getCoordonees.x; y = mainEntity#getCoordonees.y} (mainEntity#getColor) masse Player Splitting in
+      newEntity#setTimeToNextState 1.;
+      let vector = mainEntity#getSpeed in let norme = sqrt(vector.x *. vector.x +. vector.y *. vector.y)
+      in let entitySpeed = {x = vector.x *. 120. /. norme; y = vector.y *. 120. /. norme}
+      in newEntity#setSpeed entitySpeed;
+      self#addEntity newEntity);
+
+    (* EAT OTHER PLAYERS *)
+    method eat output = 
+      List.iter (fun otherPlayer ->
+        
+        List.iter (fun otherEntity ->
+
+        let candidates = List.filter (fun entity -> mange entity otherEntity self#getRatio) entities 
+        in if List.length candidates > 0 then
+        let candidate = List.hd (List.sort (fun e1 e2 -> e2#getMasse - e1#getMasse) candidates) 
+        in 
+          eaten <- (otherPlayer#getId, otherEntity#getId)::eaten;
+          self#addScore candidate otherEntity#getMasse;
+          otherPlayer#removeEntityById otherEntity#getId;
+          output_string output (Printf.sprintf "EAT %d,%d %d\n" otherPlayer#getId otherEntity#getId id );
+          flush output;
+          ) (List.filter (fun entity -> not (List.exists (fun (pId, eId) -> pId = otherPlayer#getId && eId = entity#getId) eaten)) otherPlayer#getEntities);
+
+        ) !other_players;
+
 end;;
 
 
@@ -320,15 +352,16 @@ let generate_bushes =
     bushes := (new entity i (generate_cord ()) 0 60 Bush Idle)::!bushes
   done;;
 
-let player = new player (-1) [new entity 0 (generate_cord ()) (generate_color ()) 10 Player MainEntity];;
-
 let generate_bushesFood =
   for i = 0 to maxBushesFood do
     bushesFood := (new entity i (generate_cord ()) 0 60 Bush Idle)::!bushesFood
   done;;
 
+let getOtherPlayersEntites () = List.flatten (List.map (fun otherPlayer -> otherPlayer#getEntities) !other_players);;
 
-let rec event_loop time serverData = 
+let getPlayersEntities player func = List.sort (fun e1 e2 -> e2#getMasse - e1#getMasse) (List.filter func (getOtherPlayersEntites ())@(List.tl player#getEntities))
+
+let rec event_loop player time serverData = 
   clear_graph();
 
   (* UPDATES *)
@@ -351,7 +384,7 @@ let rec event_loop time serverData =
   set_color black;
   (match serverData with 
   | None -> draw_string "Singleplayer";
-  | Some (input, output) -> player#updateServer input output; draw_string "Multiplayer");
+  | Some (input, output) -> player#updateServer input output; List.iter (fun otherPlayer -> otherPlayer#updateCoords deltaTime) !other_players; player#eat output;  draw_string "Multiplayer");
 
   let playerCord = player#getMainEntity#getCoordonees in
   moveto 5 (size_y () - 30); draw_string (Printf.sprintf "Position : %0.0f, %0.0f" playerCord.x  playerCord.y);
@@ -360,6 +393,9 @@ let rec event_loop time serverData =
     | None -> ()
     | Some _  -> moveto 5 (size_y () - 45);
       draw_string (Printf.sprintf "Connected : %d " (List.length (!other_players) + 1)));
+
+  moveto (size_x () - 100) (size_y () - 15);
+  draw_string "Press x to split";
 
   (* DRAWING *)
   player#destroyFoods;
@@ -370,19 +406,16 @@ let rec event_loop time serverData =
 
   drawEntities player player#getFoods (fun x y color radius -> (set_color color; fill_circle x y radius));
 
-  drawEntities player (List.filter (fun entity -> entity#getState <> MainEntity) player#getEntities) (fun x y color radius -> (set_color color; fill_circle x y radius));
+  drawEntities player (getPlayersEntities player (fun entity -> entity#getMasse <= player#getMainEntity#getMasse)) (fun x y color radius -> (set_color color; fill_circle x y radius));
   drawMainPlayer player;
+  drawEntities player (getPlayersEntities player (fun entity -> entity#getMasse > player#getMainEntity#getMasse)) (fun x y color radius -> (set_color color; fill_circle x y radius));
   
   drawEntities player !bushes (fun x y _color radius -> drawBush x y (float_of_int radius) "green");
   drawEntities player !bushesFood (fun x y _color radius -> drawBush x y (float_of_int radius) "red"); 
   (*spawn_buisson_feed player (List.hd (!bushesFood)); *)
 
-  (match serverData with 
-    | None -> ();
-    | Some (_) -> List.iter (fun otherPlayer -> otherPlayer#updateCoords deltaTime; drawEntities player (otherPlayer#getEntities) (fun x y color radius -> set_color color; fill_circle x y radius)) (!other_players));
-
   synchronize ();
-  event_loop newTime serverData;;
+  event_loop player newTime serverData;;
 
 let open_connection () = 
     let server_address = 
@@ -407,10 +440,16 @@ let handle_incoming_data input =
 
 
 let () = 
+  let defaultEntityMasse = 200 in 
   open_window (); 
   try
     (* On ouvre une connection avec le serveur *)
     let (input, output) = open_connection () in
+
+    output_string output "GETPLAYERID\n";
+    flush output;
+    let id = Scanf.sscanf (input_line input) "%d" (fun x -> x) in
+    let player = new player id [new entity 0 (generate_cord ()) (generate_color ()) defaultEntityMasse Player Idle] in
     ignore (Thread.create handle_incoming_data input);
-    event_loop (Unix.gettimeofday ()) (Some (incomingData, output));
-  with Unix.Unix_error (Unix.ECONNREFUSED, "connect", "") -> event_loop (Unix.gettimeofday ()) None;;
+    event_loop player (Unix.gettimeofday ()) (Some (incomingData, output));
+  with Unix.Unix_error _ -> let player = new player (-1) [new entity 0 (generate_cord ()) (generate_color ()) defaultEntityMasse Player Idle] in event_loop player (Unix.gettimeofday ()) None;; 

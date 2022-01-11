@@ -22,12 +22,17 @@ let execute (input, output) =
   while true do
     (* On retransmet les informations envoyés par le client aux autres clients *)
     let incomingData = input_line input in
-    List.iter (fun (id, (clientInput, clientOutput)) -> 
+    let dataType = Scanf.sscanf (List.hd (String.split_on_char ' ' incomingData)) "%s" (fun x -> x) in
+    match dataType with 
+    | "UPDATE" -> List.iter (fun (id, (clientInput, clientOutput)) -> 
       if connectionID <> id then 
-        begin output_string clientOutput ((Printf.sprintf "UPDATE %d," connectionID) ^ incomingData ^ "\n"); 
+        begin output_string clientOutput (incomingData ^ "\n"); 
           flush clientOutput end) !connections;
+    | "GETPLAYERID" -> output_string output (Printf.sprintf "%d\n" connectionID); flush output;
+    | "EAT" -> List.iter (fun (id, (clientInput, clientOutput)) -> output_string clientOutput (incomingData ^ "\n"); flush clientOutput) !connections;
+    | _ -> print_endline ("Invalid data type" ^ dataType);
   done;
-with End_of_file -> closeConnection connectionID output | Sys_error "Connection reset by peer" -> closeConnection connectionID output;;
+with End_of_file -> closeConnection connectionID output | Sys_error _ -> closeConnection connectionID output;;
 let init () = 
   let port = 8086 in
   let socket_address = ADDR_INET (inet_addr_of_string "0.0.0.0", port) in
