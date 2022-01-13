@@ -2,88 +2,122 @@ open Graphics;;
 
 exception InvalidResponseType of string;;
 
-Random.init (int_of_float(Unix.time ()))
+exception YouLose;;
+
+Random.init (int_of_float(Unix.time ()));;
 
 type coordonees = {x: float; y: float};;
 type nature = Player | Food | Bush;;
 type state = Splitting | Assembling | Idle;;
+(* La taille de la map *)
 let map = ({x = 0.; y = 0.;}, {x = 2000.; y = 2000.});;
+(* Le nombre maximal de nourriture que le joueur peut afficher *)
 let maxFood = 250;;
+(* La rayon maximale d'apparition de la nourriture *)
 let spawnFoodRadius = 300.;;
+(* La rayon maximale de disparition de la nourriture *)
 let despawnFoodRadius = 350.;;
-let maxBushes = 15;;
-let maxBushesFood = 7;; 
+let maxBushes = 20;;
 
-(* Cette liste stocke toutes les informations reçus entre chaque frame *)
+let array_tracer_lettre = [|
+[|(0.,0.,0.75,2.);(0.75,2.,1.5,0.);(0.35,1.,1.,1.)|];
+[|(0.,0.,0.,2.);(0.,2.,1.,2.);(1.,2.,1.,1.);(0.,0.,1.5,0.);(1.5,1.,1.5,0.);(0.,1.,1.5,1.)|];
+[|(1.5,2.,0.,2.);(0.,0.,0.,2.);(1.5,0.,0.,0.)|];
+[|(0.,0.,0.,2.);(0.,2.,0.8,2.);(0.8,2.,1.5,1.4);(1.5,0.6,1.5,1.4);(1.5,0.6,0.8,0.);(0.8,0.,0.,0.)|];
+[|(1.5,2.,0.,2.);(0.,2.,0.,0.);(0.,0.,1.5,0.);(0.7,1.,0.,1.)|];
+[|(0.,0.,0.,2.);(0.,2.,1.5,2.);(0.75,1.,0.,1.)|];
+[|(1.5,2.,0.,2.);(0.,2.,0.,0.);(0.,0.,1.5,0.);(1.5,0.,1.5,1.);(1.5,1.,0.8,1.)|];
+[|(0.,2.,0.,0.);(1.5,2.,1.5,0.);(0.,1.,1.5,1.)|];
+[|(0.75,1.75,0.75,0.)|];
+[|(0.,2.,1.5,2.);(0.75,2.,0.75,0.);(0.,0.,0.75,0.)|];
+[|(0.,2.,0.,0.);(1.5,2.,0.22,1.);(0.22,1.,1.5,0.);(0.,1.,0.22,1.)|];
+[|(0.,2.,0.,0.);(0.,0.,1.5,0.)|];
+[|(0.,0.,0.,2.);(0.,2.,0.75,1.1);(0.75,1.1,1.5,2.);(1.5,2.,1.5,0.)|];
+[|(0.,0.,0.,2.);(0.,2.,1.5,0.);(1.5,0.,1.5,2.)|];
+[|(0.,0.,1.5,0.);(1.5,0.,1.5,2.);(1.5,2.,0.,2.);(0.,2.,0.,0.)|];
+[|(0.,0.,0.,2.);(0.,2.,1.5,2.);(1.5,2.,1.5,1.);(1.5,1.,0.,1.)|];
+[|(0.,0.,0.,2.);(1.5,2.,0.,2.);(1.5,2.,1.5,0.);(0.,0.,1.5,0.);(0.88,0.59,1.4,-.0.3)|];
+[|(0.,0.,0.,2.);(0.,2.,1.5,2.);(1.5,1.,1.5,2.);(1.5,1.,0.,1.);(0.7,1.,1.5,0.)|];
+[|(1.5,2.,0.,2.);(0.,2.,0.,1.);(0.,1.,1.5,1.);(1.5,1.,1.5,0.);(1.5,0.,0.,0.)|];
+[|(0.,2.,1.5,2.);(0.75,2.,0.75,0.)|];
+[|(0.,2.,0.,0.);(0.,0.,1.5,0.);(1.5,0.,1.5,2.)|];
+[|(0.,2.,0.75,0.);(1.5,2.,0.75,0.)|];
+[|(0.,2.,0.3,0.);(0.3,0.,0.75,0.5);(0.75,0.5,1.2,0.);(1.5,2.,1.2,0.)|];
+[|(0.,2.,1.5,0.);(1.5,2.,0.,0.)|];
+[|(1.5,2.,0.,0.);(0.,2.,0.75,1.)|];
+[|(0.,2.,1.5,2.);(0.,0.,1.5,2.);(0.,0.,1.5,0.)|];
+|];;
+
+(* Cette liste stocke toutes les informations reçus entre chaque frame par le joueur *)
 let incomingData = ref [];;
 let bushes = ref [];;
+(* Stocke les autres joueurs *)
 let other_players = ref [];;
-let bushesFood = ref [];;
 
+(* Permet de générer des coordonnées aléatoires *)
 let generate_cord () = 
   let min, max = map in
-  let _x = Random.float (max.x -. min.x) +. min.x
-  and _y = Random.float (max.y -. min.y) +. min.y
+  let x = Random.float (max.x -. min.x) +. min.x
+  and y = Random.float (max.y -. min.y) +. min.y
   in
-  {x = 0.; y = 0.};;  
-
+  {x = x; y = y};;  
+(* Permet de générer une couleur aléatoire *)
 let generate_color () = 
   let r = Random.int (255) + 1
   and g = Random.int (255) + 1  
   and b = Random.int (255) + 1
 in rgb r g b;;
 
+let string_to_entityName s = List.map (fun x -> if x = ' ' then -1 else int_of_char x - 65 ) (List.init (String.length s) (String.get s))
+(* détécte la collision entre deux entités *)
 let collision entity1 entity2 scaleRatio = sqrt((entity1#getCoordonees.x -. entity2#getCoordonees.x)**2. +. (entity1#getCoordonees.y -. entity2#getCoordonees.y)**2.) *. scaleRatio < float_of_int (entity1#getRadius + entity2#getRadius);;
 
 let mange entity target scaleRatio =
   let distance = sqrt ((entity#getCoordonees.x -. target#getCoordonees.x)**2. +. (entity#getCoordonees.y -. target#getCoordonees.y)**2.) in
-  
   float_of_int entity#getRadius >= distance *. scaleRatio && float_of_int entity#getRadius >= float_of_int target#getRadius *. 1.3
 
-class entity id coord color masse nature state = 
+class entity id name coord color masse nature state = 
   object (self)
-
     val id = (id: int)
+    val name = (name: int list)
     val nature = (nature: nature)
     val mutable coordonees = (coord : coordonees)
     val mutable speed = ({ x = 0.; y = 0.;} : coordonees)
     val mutable color = (color : color)
     val mutable masse = (masse : int)
     val mutable state = (state: state);
+    (* temps en seconde avant le prochain changement d'état de l'entité *)
     val mutable timeToNextState = (0. : float);
+    (* si on doit notifier les autres joueurs *)
     val mutable needUpdate = (false: bool);
 
+    method getName = name;
     method getState = state;
     method getTimeToNextState = timeToNextState;
     method setTimeToNextState (newTime : float) = timeToNextState <- newTime;
-
     method getCoordonees = coordonees;
     method getColor = color;
     method getRadius = match nature with
       | Player -> 30 + int_of_float ((float_of_int masse)**0.7)
       | Food -> 8
       | Bush -> masse;
-
     method getSpeed = speed;
     method setSpeed newSpeed = speed <- newSpeed;
-
     method getId = id;
-
     method needUpdate = needUpdate;
-
     method setState newState = state <- newState;
-
+    (* Permet de mettre à jour l'état de l'entité *)
     method updateState deltat (player: player) = 
-      
       if timeToNextState > deltat then timeToNextState <- timeToNextState -. deltat else timeToNextState <- 0.;
       match state with
       | Idle -> ();
       | Splitting -> if self#getTimeToNextState <= 0. then state <- Assembling;
       | Assembling -> 
+        (* l'entité peut se fusioner avec une entité de masse suffisante *)
         try 
           let eater =  List.hd (List.sort (fun e1 e2 -> e2#getMasse - e1#getMasse) 
           (List.filter(fun entity -> entity#getId <> self#getId && mange entity self player#getRatio) player#getEntities));
-          in player#addScore eater (self#getMasse);
+          in eater#addMasse (self#getMasse);
           player#removeEntityById self#getId;
         with Failure _ -> ();
 
@@ -91,8 +125,8 @@ class entity id coord color masse nature state =
     method updateSpeed (newSpeed: coordonees) deltat mainEntityPosition = 
       match state with
       | Idle when nature = Player -> needUpdate <- newSpeed.x <> speed.x || newSpeed.y <> speed.y; speed <- newSpeed; 
-      | Splitting -> speed <- {x = speed.x +. deltat *. (-50.); y = speed.y +. deltat *. (-50.)};
-      | Assembling -> speed <- {x = (mainEntityPosition.x -. coordonees.x) /. 4.; y = (mainEntityPosition.y -. coordonees.y) /. 4.};
+      | Splitting -> speed <- {x = speed.x +. deltat *. 4.5 *. (mainEntityPosition.x -. coordonees.x); y = speed.y +. deltat *. 4.5 *. ((mainEntityPosition.y -. coordonees.y))};
+      | Assembling -> speed <- {x = (mainEntityPosition.x -. coordonees.x) /. 3.; y = (mainEntityPosition.y -. coordonees.y) /. 3.};
       | Idle -> ();
 
     (* modifie les coordonnées de l'entité sans sortir de la map *)
@@ -113,25 +147,24 @@ class entity id coord color masse nature state =
     method setMasse newMasse = masse <- newMasse;
 end
 
-and player id entities = 
+and player id name score entities = 
   object (self)
-    val mutable id = (id: int)
+    val name = (name: string)
+    val id = (id: int)
     val mutable entities = (entities : entity list);
-    val mutable score = (0 : int);
+    val mutable score = (score : int);
     val mutable foods = ([]: entity list);
     val mutable needUpdate = (true: bool);
     val mutable entityIdCounter = (1 : int);
     val mutable eaten = [];
 
     method getId = id
+    method getName = name;
     method getMainEntity = List.hd entities
-
     method getEntities = entities;
-
     method addEntity entity = entities <- entities@[entity];
-
-    method removeEntityById id = entities <- List.filter (fun entity -> entity#getId <> id) entities;
-    
+    method removeEntityById id = entities <- List.filter (fun entity -> entity#getId <> id) entities; 
+    (* permet de mettre à jour l'entité principale lorsque qu'elle s'est faite manger *)
     method updateMainEntity =
       if List.length entities > 0 then
         begin
@@ -140,29 +173,22 @@ and player id entities =
           candidate#setState Idle;
           entities <- newEntities;
         end;
-
     method getScore = score;
-
     method getSpeed = 60. *. exp (-. float_of_int (score) /. 750.) +. 45.;
-
     method getFoods = foods;
-  
     method getRatio = 4.;
-  
     method updateCoords deltat = List.iter(fun entity -> entity#updateCoords deltat) entities;
-
     method updatePlayerSpeed mousex mousey deltat = 
       let mainEntity = self#getMainEntity
       and vector = {x = float_of_int (mousex - size_x () / 2); y = float_of_int (mousey - size_y () / 2)}
     in let norme = sqrt(vector.x *. vector.x +. vector.y *. vector.y)
     in let normalizedVector = match norme with
     | norme when norme < float_of_int mainEntity#getRadius *. 0.15 -> {x = 0.; y = 0.}
-    | norme when norme < float_of_int mainEntity#getRadius ->  {x = vector.x /. 100.; y = vector.y /. 100.}
-    | _ -> {x = vector.x  /. norme; y = vector.y /. norme}
+    | norme when norme < float_of_int mainEntity#getRadius -> {x = vector.x /. (norme *. 5.); y = vector.y /. (norme *. 5.)}
+    | _ -> {x = vector.x /. norme; y = vector.y /. norme}
       in 
       List.iter (fun entity -> entity#updateSpeed { x = normalizedVector.x *. self#getSpeed; y = normalizedVector.y *. self#getSpeed } deltat mainEntity#getCoordonees) entities;
       needUpdate <- List.exists (fun entity -> entity#needUpdate) entities;
-
   method generateFoods = 
     let i = ref (List.length foods);
     and min, max = map in
@@ -171,29 +197,24 @@ and player id entities =
       let x = (if Random.bool () then 1. else -1.) *. Random.float(spawnFoodRadius) +. playerCord.x
       and y = (if Random.bool () then 1. else -1.) *. Random.float(spawnFoodRadius) +. playerCord.y in
     if x > min.x && x < max.x && y > min.y && y < max.y then
-      let newFood = new entity (-1) {x = x; y = y;} (generate_color ()) 1 Food Idle;
+      let newFood = new entity (-1) [] {x = x; y = y;} (generate_color ()) 1 Food Idle;
       in foods <- newFood :: foods;
     i := !i + 1;
     done;
-
   method destroyFoods = foods <- List.filter (fun food -> 
       let foodCord = food#getCoordonees
       and playerCord = self#getMainEntity#getCoordonees
         in if abs_float (foodCord.x -. playerCord.x) > despawnFoodRadius || abs_float (foodCord.y -. playerCord.y) > despawnFoodRadius then false else true) foods;
-
   method handleFoodCollisions = foods <- List.filter (fun food -> 
     (List.exists (fun entity -> if collision entity food self#getRatio then let () = self#addScore entity food#getMasse in true else false) entities) <> true
     ) foods;
-
   method addScore entity quantity = score <- score + quantity; entity#addMasse quantity; needUpdate <- true;
-
   method removeScore quantity = score <- score - quantity; needUpdate <- true;
-
-  method updateServer incomingData output = 
+  method updateServer incomingData output =
     (* SENDING DATA *)
     begin
       if needUpdate then
-      let dataToSend = ref (Printf.sprintf "UPDATE %d," id) in
+      let dataToSend = ref (Printf.sprintf "UPDATE %d %d %s," id score name) in
       List.iter (fun entity -> let id = entity#getId and speed = entity#getSpeed and coordonees = entity#getCoordonees in dataToSend := !dataToSend ^ (Printf.sprintf "%d %0.2f %0.2f %0.2f %0.2f %d %d,"id coordonees.x coordonees.y speed.x speed.y entity#getMasse entity#getColor)) entities;
       output_string output (!dataToSend ^ "\n");
       flush output; 
@@ -206,21 +227,23 @@ and player id entities =
       | [] -> ()
       | playerData::entitesData -> 
         let (responseType, playerId) = Scanf.sscanf playerData "%s %d" (fun x y -> (x, y))
-      in match responseType with 
-          | "UPDATE" -> 
+        in match responseType with 
+          | "UPDATE" ->
+            let pScore, pName = Scanf.sscanf playerData "%s %d %d %s" (fun _ _ x y -> (x, y)) in
             let entities = List.filter (fun entity -> not (List.exists (fun (pId, eId) -> (pId = playerId && eId = entity#getId)) eaten)) (List.map (fun entityData -> 
             let (entityId, coordonees, speed, masse, color) = Scanf.sscanf entityData "%d %f %f %f %f %d %d" (fun id x y sx sy masse color -> (id, {x = x; y = y;}, {x = sx; y = sy}, masse, color))
               in
-              let entity = new entity entityId coordonees color masse Player Idle in ignore (entity#setSpeed speed); entity) (List.filter (fun str -> str <> "") entitesData))
-            in other_players := (new player playerId entities)::(List.filter (fun player -> player#getId <> playerId) !other_players);
+              let entity = new entity entityId (string_to_entityName pName) coordonees color masse Player Idle in ignore (entity#setSpeed speed); entity) (List.filter (fun str -> str <> "") entitesData))
+            in let player = new player playerId pName pScore entities 
+            in other_players := player::(List.filter (fun player -> player#getId <> playerId) !other_players);
           | "DISCONNECT" -> other_players := List.filter (fun p -> p#getId <> playerId) !other_players;
-          | "EAT" -> 
-            let entityId, _eaterId = Scanf.sscanf (List.hd entitesData) "%d %d" (fun id eaterId -> (id, eaterId)) in
+          | "EAT" ->  (* lorsque une entité d'un autre joueur se fait manger se fait manger *)
+            let entityId = Scanf.sscanf (List.hd entitesData) "%d" (fun id -> id) in
             (match id with
             | id when id = playerId -> let isMainEntityEaten = entityId = self#getMainEntity#getId and masse = (List.find (fun entity -> entity#getId = entityId) entities)#getMasse in
                 self#removeEntityById entityId;
                 self#removeScore masse;
-                if List.length entities = 0 then print_endline "you lose" else (if isMainEntityEaten then self#updateMainEntity);
+                if List.length entities = 0 then raise YouLose else (if isMainEntityEaten then self#updateMainEntity);
 
             | _ -> let otherPlayer = List.find (fun p -> p#getId = playerId) !other_players in otherPlayer#removeEntityById entityId)
           | _ -> raise (InvalidResponseType responseType);
@@ -228,18 +251,16 @@ and player id entities =
       (!incomingData);
     incomingData := [];
 
-
-  (* SPLITTINGS *)
   method split =
     let mainEntity = self#getMainEntity in
     (if mainEntity#getMasse >= 50 && List.for_all (fun entity -> mainEntity#getMasse * 3 / 4 > entity#getMasse  ) (List.tl entities) then 
       let masse = mainEntity#getMasse / 4 and id = entityIdCounter
       in entityIdCounter <- entityIdCounter + 1;
       mainEntity#setMasse (mainEntity#getMasse - masse);
-      let newEntity = new entity id {x = mainEntity#getCoordonees.x; y = mainEntity#getCoordonees.y} (mainEntity#getColor) masse Player Splitting in
+      let newEntity = new entity id (string_to_entityName self#getName) {x = mainEntity#getCoordonees.x; y = mainEntity#getCoordonees.y} (mainEntity#getColor) masse Player Splitting in
       newEntity#setTimeToNextState 1.;
       let vector = mainEntity#getSpeed in let norme = sqrt(vector.x *. vector.x +. vector.y *. vector.y)
-      in let entitySpeed = {x = vector.x *. 120. /. norme; y = vector.y *. 120. /. norme}
+      in let entitySpeed = {x = vector.x *. 300. /. norme; y = vector.y *. 300. /. norme}
       in newEntity#setSpeed entitySpeed;
       self#addEntity newEntity);
 
@@ -256,7 +277,8 @@ and player id entities =
           eaten <- (otherPlayer#getId, otherEntity#getId)::eaten;
           self#addScore candidate otherEntity#getMasse;
           otherPlayer#removeEntityById otherEntity#getId;
-          output_string output (Printf.sprintf "EAT %d,%d %d\n" otherPlayer#getId otherEntity#getId id );
+          (* on notifie les autres joueurs que on mange une entité *)
+          output_string output (Printf.sprintf "EAT %d,%d\n" otherPlayer#getId otherEntity#getId);
           flush output;
           ) (List.filter (fun entity -> not (List.exists (fun (pId, eId) -> pId = otherPlayer#getId && eId = entity#getId) eaten)) otherPlayer#getEntities);
 
@@ -264,23 +286,26 @@ and player id entities =
 
 end;;
 
+let drawEntityName x y name = 
+  moveto x y;
+  set_line_width 4;
+  set_color white;
+  let iter = ref 1 
+  and debutx = float_of_int x -. (float_of_int (List.length (name)) *. 2.5) -. 50.
+  and debuty = float_of_int y -. 10.
+  and coef = (float_of_int(size_y())*.1./.12.)/.7. in 
+  List.iter (fun letter -> (match letter with 
+  | -1 -> ()
+  | k -> let decallage = debutx +. float_of_int(!iter)*.(1.5*.coef +. 10.) in
+          draw_segments (Array.map (fun (a, b, c, d) -> (int_of_float(coef*.a +. decallage), int_of_float(coef*.b +. debuty), int_of_float(coef*.c +. decallage), int_of_float(coef*.d +. debuty))) array_tracer_lettre.(k) ));
+          incr iter;   
+          ) (List.rev name);;
 
 let drawMainPlayer player =
   let mainEntity = player#getMainEntity in
   set_color mainEntity#getColor;
-  fill_circle (size_x() / 2) (size_y () / 2) (mainEntity#getRadius);; 
-
-(*  
-let spawn_buisson_feed coordonees rayon = 
-  let theta = Random.float (2.*.Float.pi) in
-    let entity ( coord = {x = float_of_int(rayon)*.cos(theta) ; y = float_of_int(rayon)*.sin(theta)}; color := rgb generate_color ; masse := 1)
-    and marge = Random.int 20 in 
-    for i = 0 to 40 + marge do
-      entity#getCoordonees := {x = coordonees.x +. int_of_float(rayon+i) *. cos(theta); y= int_of_float(rayon+i)*.sin(theta)}; 
-      set_color entity#getColor;
-      fill_circle (int_of_float(entity#getCoordonees.x)) (int_of_float(entity#getCoordonees.y)) (entity#getRadius);
-    done;; *)
-
+  fill_circle (size_x() / 2) (size_y () / 2) (mainEntity#getRadius);
+  drawEntityName (size_x () / 2) (size_y () / 2) (mainEntity#getName);;
 
 let drawBush x y radius color = let tableau_coord = Array.make 80 (0,0) and tableau_coord2 = Array.make 80 (0,0) and cote = 6. and compteur = ref 0 and alpha = 2.*.Float.pi/.40. in
   for k=0 to 40-1 do
@@ -306,9 +331,10 @@ let drawBush x y radius color = let tableau_coord = Array.make 80 (0,0) and tabl
     else
       begin
         set_color (rgb 240 125 115);
-        fill_poly (tableau_coord)
+        fill_poly (tableau_coord);
       end;;
 
+(* permet de tracer une liste d'entités au bonne endroit sur l'écran par rapport à sa position la position relative entre chaque entités et le joueur *)
 let drawEntities player entities drawFunc = 
   let mainEntityCord = player#getMainEntity#getCoordonees in
   List.iter (fun entity ->
@@ -316,11 +342,15 @@ let drawEntities player entities drawFunc =
   let realX = int_of_float((entity#getCoordonees.x -. mainEntityCord.x) *. player#getRatio) + size_x () / 2
   and realY = int_of_float((entity#getCoordonees.y -. mainEntityCord.y) *. player#getRatio) + size_y() / 2 
   in if realX > 0 - radius && realX < size_x () + radius && realY > 0 - radius && realY < size_y () + radius then
-    drawFunc realX realY entity#getColor radius )
+    drawFunc realX realY entity#getColor radius; 
+    if entity#getName <> [] then drawEntityName realX realY entity#getName;
+  )
   entities;; 
 
+(* trace la grille en fond *)
 let drawGrid player =
-  let gridSpacing = 60
+  set_line_width 0;
+  let gridSpacing = int_of_float (15. *. player#getRatio)
   and mainEntity = player#getMainEntity in
   let currentCord = mainEntity#getCoordonees
 in let gridStartX = gridSpacing - int_of_float (currentCord.x *. player#getRatio) mod gridSpacing
@@ -338,28 +368,14 @@ while !j < size_y () do
   j := !j + gridSpacing;
 done;;
 
-(*let spawn_buisson_feed player bushesFood = 
-  let theta = Random.float (2.*.Float.pi) in
-    let newFood = new entity {x = float_of_int(bushesFood#getRadius)*.cos(theta); y = float_of_int(bushesFood#getRadius)*.sin(theta);} (generate_color ()) 9 Food
-    and marge = Random.int 20 in 
-    for i = 0 to 40 + marge do
-      newFood#addCoordonees ({x = float_of_int((bushesFood#getRadius+ i)) *. cos(theta); y = float_of_int((bushesFood#getRadius+i))*.sin(theta)}); 
-      drawEntities player [newFood] player#getDrawFoodFun
-    done;; *)
-
-let generate_bushes = 
+let generate_bushes () = 
   for i = 0 to maxBushes do
-    bushes := (new entity i (generate_cord ()) 0 60 Bush Idle)::!bushes
-  done;;
-
-let generate_bushesFood =
-  for i = 0 to maxBushesFood do
-    bushesFood := (new entity i (generate_cord ()) 0 60 Bush Idle)::!bushesFood
+    bushes := (new entity i [] (generate_cord ()) 0 60 Bush Idle)::!bushes
   done;;
 
 let getOtherPlayersEntites () = List.flatten (List.map (fun otherPlayer -> otherPlayer#getEntities) !other_players);;
 
-let getPlayersEntities player func = List.sort (fun e1 e2 -> e2#getMasse - e1#getMasse) (List.filter func (getOtherPlayersEntites ())@(List.tl player#getEntities))
+let getPlayersEntities player func = List.sort (fun e1 e2 -> e2#getMasse - e1#getMasse) (List.filter func ((getOtherPlayersEntites ())@(List.tl player#getEntities)));;
 
 let rec event_loop player time serverData = 
   clear_graph();
@@ -373,11 +389,11 @@ let rec event_loop player time serverData =
   player#updatePlayerSpeed mousex mousey deltaTime;
   player#updateCoords deltaTime;
 
-  (if key_pressed () then let key = read_key () in 
-    match key with 
-    | 'x' -> player#split;
-    | _ -> ();
-  );
+  (if key_pressed () then 
+      let key = read_key () in 
+      match int_of_char key with 
+      | 32 -> player#split; (* press space bar *)
+      | _ -> ());
 
   (* MONITORING *)
   moveto 5 (size_y () - 15);
@@ -389,14 +405,27 @@ let rec event_loop player time serverData =
   let playerCord = player#getMainEntity#getCoordonees in
   moveto 5 (size_y () - 30); draw_string (Printf.sprintf "Position : %0.0f, %0.0f" playerCord.x  playerCord.y);
 
+  moveto (size_x () - 125) (size_y () - 15);
+  draw_string "Press SPACE to split";
+
+  moveto (size_x () - 100) (size_y () - 30);
+  draw_string (Printf.sprintf "Score : %d" player#getScore);
+
   (match serverData with
     | None -> ()
     | Some _  -> moveto 5 (size_y () - 45);
-      draw_string (Printf.sprintf "Connected : %d " (List.length (!other_players) + 1)));
+      draw_string (Printf.sprintf "Connected : %d " (List.length (!other_players) + 1));
+      
+      let i = ref 0 in
+      List.iter (fun p -> moveto (size_x () - 150) (size_y () - 45 - !i * 15);
+        draw_string (Printf.sprintf "Player %d score : %d" p#getId p#getScore);
+        incr i;
+      ) (List.sort (fun p1 p2 -> p2#getScore - p1#getScore) !other_players);
+      );
 
-  moveto (size_x () - 100) (size_y () - 15);
-  draw_string "Press x to split";
 
+
+  
   (* DRAWING *)
   player#destroyFoods;
   player#handleFoodCollisions;
@@ -409,26 +438,15 @@ let rec event_loop player time serverData =
   drawEntities player (getPlayersEntities player (fun entity -> entity#getMasse <= player#getMainEntity#getMasse)) (fun x y color radius -> (set_color color; fill_circle x y radius));
   drawMainPlayer player;
   drawEntities player (getPlayersEntities player (fun entity -> entity#getMasse > player#getMainEntity#getMasse)) (fun x y color radius -> (set_color color; fill_circle x y radius));
-  
-  drawEntities player !bushes (fun x y _color radius -> drawBush x y (float_of_int radius) "green");
-  drawEntities player !bushesFood (fun x y _color radius -> drawBush x y (float_of_int radius) "red"); 
-  (*spawn_buisson_feed player (List.hd (!bushesFood)); *)
+  if serverData = None then drawEntities player !bushes (fun x y _color radius -> drawBush x y (float_of_int radius) "green");
 
   synchronize ();
   event_loop player newTime serverData;;
 
-let open_connection () = 
-    let server_address = 
-      let addr = Unix.inet_addr_of_string "129.151.252.122" and port = 8086 
-      in Unix.ADDR_INET(addr, port)
-      in Unix.open_connection server_address;;
 
-let open_window () = 
-  open_graph "";
-  resize_window 800 600;
-  set_window_title "Agar.ml";
-  display_mode false;
-  auto_synchronize false;;
+let open_connection () = 
+    let server_address = let addr = Unix.inet_addr_of_string "129.151.252.122" and port = 8086 in Unix.ADDR_INET(addr, port)
+    in Unix.open_connection server_address;;
 
 let handle_incoming_data input = 
   try 
@@ -438,18 +456,177 @@ let handle_incoming_data input =
   done;
   with End_of_file -> ();;
 
+let affiche_lettre list_lettre = 
+  set_line_width 4;
+  set_color white;
+  fill_rect (size_x()*5/16) (size_y()*7/24) (size_x()*6/16) (size_y()*1/12);
+  set_color black;
+  draw_rect (size_x()*5/16) (size_y()*7/24) (size_x()*6/16) (size_y()*1/12);
+  let iter = ref 1 
+  and debutx = float_of_int(size_x())*.5./.16.
+  and debuty = float_of_int(size_y())*.15./.48. 
+  and coef = (float_of_int(size_y())*.1./.12.)/.5.5 in 
+  List.iter (fun letter -> (match letter with 
+  | -1 -> ()
+  | k -> let decallage = debutx +. float_of_int(!iter)*.(1.5*.coef +. 10.) in
+          draw_segments (Array.map (fun (a, b, c, d) -> (int_of_float(coef*.a +. decallage), int_of_float(coef*.b +. debuty), int_of_float(coef*.c +. decallage), int_of_float(coef*.d +. debuty))) array_tracer_lettre.(k) ));
+          incr iter;   
+          ) (List.rev list_lettre);
+  synchronize ();;
+  
+let rec menu_loop windowX windowY pseudo = 
+
+  if((!windowX) <> size_x () || (!windowY) <> size_y ()) then
+    begin
+      windowX := size_x ();
+      windowY := size_y ();
+      (* Rerender main menu *)
+      clear_graph ();
+      
+      (* on trace les cercles *)
+      for _i = 0 to 50 do 
+        let x = Random.int (size_x ()) and y = Random.int (size_y ()) in
+        set_color (generate_color());
+        fill_circle x y (Random.int (10)+20)
+      done;
+
+      (* on trace AGAR.ML *)
+      let lettre1 = [|(0.,0.);(1.,3.);(2.289,3.005);(2.903,0.);(2.,0.);(1.811,1.001);(1.245,0.980);(1.,0.)|]
+      and lettre2 = [|(1.397,2.421);(1.320,1.692);(1.870,1.816);(1.893,2.439)|]
+      and lettre3 = [|(2.495,1.999);(3.,3.);(4.296,3.010);(4.5,2.5);(3.5,2.);(3.5,1.);(4.370,1.277);(3.949,1.568);(4.413,1.865);(4.834,1.488);(4.791,0.498);(4.299,0.);(2.904,0.)|]
+      and lettre4 = [|(4.296,0.);(5.5,3.);(6.177,3.019);(7.,0.);(6.098,0.);(6.,1.);(5.499,0.816);(5.279,0.)|]
+      and lettre5 = [|(5.703,2.385);(5.592,1.664);(6.016,1.844);(6.,2.4)|]
+      and lettre6 = [|(6.668,3.011);(8.,3.);(8.485,2.168);(7.738,1.475);(8.345,0.833);(8.626,0.);(7.862,0.);(7.475,0.772);(7.,0.);(6.453,2.007)|]
+      and lettre7 = [|(7.203,2.493);(7.669,2.256);(7.089,1.817)|]
+      and lettre8 = [|(8.626,0.);(8.837,0.711);(9.361,0.741);(9.636,0.)|]
+      and lettre9 = [|(9.452,1.683);(9.832,2.996);(10.396,3.006);(10.683,1.714);(10.467,0.);(9.636,0.)|]
+      and lettre10 = [|(9.636,0.);(9.761,0.741);(9.5,2.);(10.,3.);(10.496,2.61);(10.970,1.608);(11.22,2.663);(11.81,2.985);(12.051,1.725);(12.328,0.);(11.613,0.);(11.363,1.036);(10.755,0.724);(10.263,1.331);(10.228,0.598);(10.63,0.)|]
+      and lettre11 = [|(12.051,1.725);(12.355,2.985);(13.133,3.);(12.945,1.724);(13.061,0.715);(14.170,1.01);(14.679,0.);(12.328,0.)|]
+      and coef1 = (float_of_int(size_x())*.7./.8. -. float_of_int(size_x())/.8.)/.14.68
+      and coef2 = (float_of_int(size_y())/.2. -. float_of_int(size_y())/.6.)/.3.
+      in 
+      let coef = if coef1<coef2 then coef1 else coef2 in 
+
+      set_color black;
+      Array.iter 
+        (fun lettre -> fill_poly (Array.map (fun (x, y) -> (int_of_float (coef*.x +. float_of_int(size_x())/.8.), int_of_float (coef*.y +. float_of_int(size_y())/.2.))) lettre))
+        [|lettre1; lettre3; lettre4; lettre6; lettre8; lettre9; lettre10; lettre11 |];
+      set_color white;
+      Array.iter 
+        (fun lettre -> fill_poly (Array.map (fun (x, y) -> (int_of_float (coef*.x +. float_of_int(size_x())/.8.), int_of_float ((coef*.y +. float_of_int(size_y())/.2.)))) lettre))
+        [| lettre2; lettre5; lettre7 |];
+  
+      (* on trace la textbox *)
+      set_line_width 4;
+      set_color green;
+      fill_rect (size_x()/4) (size_y()*3/24) (size_x()*3/16) (size_y()*1/12);
+
+      set_color red;
+      fill_rect (size_x()*9/16) (size_y()*3/24) (size_x()*3/16) (size_y()*1/12);
+
+      set_color white;
+      let iter = ref 0 
+      and debutx1 = float_of_int(size_x())*.21./.80.
+      and debuty1 = float_of_int(size_y())*.7./.48. 
+      and coef = (float_of_int(size_y())*.1./.12.)/.4. in 
+      Array.iter (fun letter -> let decallage = debutx1 +. float_of_int(!iter)*.(1.5*.coef +. 20.) in
+              draw_segments (Array.map (fun (a, b, c, d) -> (int_of_float(coef*.a +. decallage), int_of_float(coef*.b +. debuty1), int_of_float(coef*.c +. decallage), int_of_float(coef*.d +. debuty1))) array_tracer_lettre.((int_of_char letter)-97)  );
+              incr iter;   
+        )([|'p';'l';'a';'y'|]);
+      
+      iter := 0; 
+      let debutx2 = float_of_int(size_x())*.46./.80.
+      and debuty2 = float_of_int(size_y())*.7./.48. 
+      and coef = (float_of_int(size_y())*.1./.12.)/.4. in 
+      Array.iter (fun letter -> let decallage = debutx2 +. float_of_int(!iter)*.(1.5*.coef +. 20.) in
+              draw_segments (Array.map (fun (a, b, c, d) -> (int_of_float(coef*.a +. decallage), int_of_float(coef*.b +. debuty2), int_of_float(coef*.c +. decallage), int_of_float(coef*.d +. debuty2))) array_tracer_lettre.((int_of_char letter)-97)  );
+              incr iter;   
+        )([|'q';'u';'i';'t'|]);
+
+
+      set_color white;
+      fill_rect (size_x()*5/16) (size_y()*7/24) (size_x()*6/16) (size_y()*1/12);
+
+      set_color black;
+      draw_rect (size_x()*5/16) (size_y()*7/24) (size_x()*6/16) (size_y()*1/12);
+
+      if List.length !pseudo >= 1 then affiche_lettre (!pseudo);
+    
+      synchronize ();
+    end;
+
+    (* gestion de l'interface *)
+    if button_down () then
+      begin match mouse_pos () with
+      | mouse_x, mouse_y when mouse_x>=size_x()*5/16 && mouse_x<=size_x()*11/16 && mouse_y>= size_y()*7/24 && mouse_y<= size_y()*9/24
+        -> while key_pressed () do ignore (read_key ()) done;
+          let buttonPressedOut = ref false in
+          while( not !buttonPressedOut) do
+            if key_pressed () then
+              begin
+                let lettre = read_key () in
+                let intlettre = int_of_char lettre in
+                match intlettre with 
+                  | 8 -> if List.length (!pseudo) >= 1 then (pseudo := List.tl (!pseudo); affiche_lettre (!pseudo))
+                  | 32 when List.length !pseudo < 10 -> (pseudo := (-1)::(!pseudo);) 
+                  | intlettre when List.length !pseudo <= 10 
+                                  && ((intlettre >=65 && intlettre <= 90) || (intlettre >= 97 && intlettre <= 122)) 
+                                  -> pseudo := (((int_of_char lettre)-65) mod 32)::(!pseudo);
+                                  affiche_lettre (!pseudo);
+                  | _ -> ()
+              end;
+          let (mouse_x, mouse_y) = mouse_pos() in
+          if (button_down () && not (mouse_x>=size_x()*5/16 && mouse_x<=size_x()*11/16 && mouse_y>= size_y()*7/24 && mouse_y<= size_y()*9/24))
+            then (buttonPressedOut := true)
+          done;
+      | mouse_x, mouse_y when mouse_x >=size_x()/4 && mouse_x<=size_x()*7/16 && mouse_y>= size_y()*3/24 && mouse_y<= size_y()*5/24
+        -> begin 
+          try 
+            let defaultEntityMasse = 0 and playerName = String.of_seq (List.to_seq (List.map (fun c -> if c = -1 then ' ' else char_of_int (c+65)) !pseudo))  in 
+              try
+                (* On ouvre une connection avec le serveur *)
+                let (input, output) = open_connection () in
+                (* on recupere l'identifiant du joueur auprès du serveur *)
+                output_string output "GETPLAYERID\n";
+                flush output;
+                let id = Scanf.sscanf (input_line input) "%d" (fun x -> x) in
+                let player = new player id playerName defaultEntityMasse [new entity 0 !pseudo (generate_cord ()) (generate_color ()) defaultEntityMasse Player Idle] in
+                ignore (Thread.create handle_incoming_data input);
+                event_loop player (Unix.gettimeofday ()) (Some (incomingData, output));
+              with Unix.Unix_error _ -> 
+                generate_bushes (); 
+                let player = new player (-1) playerName defaultEntityMasse [new entity 0 !pseudo (generate_cord ()) (generate_color ()) defaultEntityMasse Player Idle] in 
+                event_loop player (Unix.gettimeofday ()) None 
+              with YouLose -> windowX := 0; windowY := 0;
+            end;
+      | mouse_x, mouse_y when mouse_x >=size_x()*9/16 && mouse_x<=size_x()*12/16 && mouse_y>= size_y()*3/24 && mouse_y<= size_y()*5/24 
+        -> close_graph ();
+      | _ -> ()
+      end;
+  menu_loop windowX windowY pseudo;;
+
+
+let open_window () = 
+  open_graph "";
+  resize_window 800 600;
+  set_window_title "Agar.ml";
+  display_mode false;
+  auto_synchronize false;;
 
 let () = 
-  let defaultEntityMasse = 200 in 
-  open_window (); 
-  try
+  (*let defaultEntityMasse = 100 and playerName = "test" in *)
+  open_window ();
+  menu_loop (ref 0) (ref 0) (ref []);
+  (* try
     (* On ouvre une connection avec le serveur *)
     let (input, output) = open_connection () in
-
+    (* on recupere l'identifiant du joueur auprès du serveur *)
     output_string output "GETPLAYERID\n";
     flush output;
     let id = Scanf.sscanf (input_line input) "%d" (fun x -> x) in
-    let player = new player id [new entity 0 (generate_cord ()) (generate_color ()) defaultEntityMasse Player Idle] in
+    let player = new player id playerName defaultEntityMasse [new entity 0 playerName (generate_cord ()) (generate_color ()) defaultEntityMasse Player Idle] in
     ignore (Thread.create handle_incoming_data input);
     event_loop player (Unix.gettimeofday ()) (Some (incomingData, output));
-  with Unix.Unix_error _ -> let player = new player (-1) [new entity 0 (generate_cord ()) (generate_color ()) defaultEntityMasse Player Idle] in event_loop player (Unix.gettimeofday ()) None;; 
+  with Unix.Unix_error _ -> generate_bushes (); 
+    let player = new player (-1) playerName defaultEntityMasse [new entity 0 playerName (generate_cord ()) (generate_color ()) defaultEntityMasse Player Idle] in 
+    event_loop player (Unix.gettimeofday ()) None;;*)
