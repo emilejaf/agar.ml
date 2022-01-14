@@ -286,15 +286,16 @@ and player id name score entities =
 
 end;;
 
-let drawEntityName x y name = 
+let drawEntityName x y name rayon = 
   moveto x y;
   set_line_width 4;
-  set_color white;
+  set_color black;
   let iter = ref 1 
-  and debutx = float_of_int x -. (float_of_int (List.length (name)) *. 2.5) -. 50.
-  and debuty = float_of_int y -. 10.
-  and coef = (float_of_int(size_y())*.1./.12.)/.7. in 
-  List.iter (fun letter -> (match letter with 
+  and nombreLettre = float_of_int (List.length name) in
+  let coef = 2.*. float_of_int rayon /. (nombreLettre *. (3.5)) in 
+  let debutx = float_of_int x -. nombreLettre *. (11. +. coef *. 2.) /. 2.
+  and debuty = float_of_int y -. 5. 
+  in List.iter (fun letter -> (match letter with 
   | -1 -> ()
   | k -> let decallage = debutx +. float_of_int(!iter)*.(1.5*.coef +. 10.) in
           draw_segments (Array.map (fun (a, b, c, d) -> (int_of_float(coef*.a +. decallage), int_of_float(coef*.b +. debuty), int_of_float(coef*.c +. decallage), int_of_float(coef*.d +. debuty))) array_tracer_lettre.(k) ));
@@ -305,7 +306,7 @@ let drawMainPlayer player =
   let mainEntity = player#getMainEntity in
   set_color mainEntity#getColor;
   fill_circle (size_x() / 2) (size_y () / 2) (mainEntity#getRadius);
-  drawEntityName (size_x () / 2) (size_y () / 2) (mainEntity#getName);;
+  drawEntityName (size_x () / 2) (size_y () / 2) (mainEntity#getName) (mainEntity#getRadius);;
 
 let drawBush x y radius color = let tableau_coord = Array.make 80 (0,0) and tableau_coord2 = Array.make 80 (0,0) and cote = 6. and compteur = ref 0 and alpha = 2.*.Float.pi/.40. in
   for k=0 to 40-1 do
@@ -343,7 +344,7 @@ let drawEntities player entities drawFunc =
   and realY = int_of_float((entity#getCoordonees.y -. mainEntityCord.y) *. player#getRatio) + size_y() / 2 
   in if realX > 0 - radius && realX < size_x () + radius && realY > 0 - radius && realY < size_y () + radius then
     drawFunc realX realY entity#getColor radius; 
-    if entity#getName <> [] then drawEntityName realX realY entity#getName;
+    if entity#getName <> [] then drawEntityName realX realY entity#getName entity#getRadius;
   )
   entities;; 
 
@@ -473,7 +474,9 @@ let affiche_lettre list_lettre =
           incr iter;   
           ) (List.rev list_lettre);
   synchronize ();;
-  
+
+
+let circles = Array.init 50 (fun _i -> let x = Random.float 1. and y = Random.float 1. and color = generate_color () in (x, y, color, Random.int (10)+20) );;
 let rec menu_loop windowX windowY pseudo = 
 
   if((!windowX) <> size_x () || (!windowY) <> size_y ()) then
@@ -484,12 +487,7 @@ let rec menu_loop windowX windowY pseudo =
       clear_graph ();
       
       (* on trace les cercles *)
-      for _i = 0 to 50 do 
-        let x = Random.int (size_x ()) and y = Random.int (size_y ()) in
-        set_color (generate_color());
-        fill_circle x y (Random.int (10)+20)
-      done;
-
+      Array.iter (fun (x, y, color, radius) -> set_color color; fill_circle (int_of_float(x *. float_of_int (size_x ()))) (int_of_float(y *. float_of_int (size_y ()))) radius) circles;
       (* on trace AGAR.ML *)
       let lettre1 = [|(0.,0.);(1.,3.);(2.289,3.005);(2.903,0.);(2.,0.);(1.811,1.001);(1.245,0.980);(1.,0.)|]
       and lettre2 = [|(1.397,2.421);(1.320,1.692);(1.870,1.816);(1.893,2.439)|]
@@ -614,19 +612,5 @@ let open_window () =
   auto_synchronize false;;
 
 let () = 
-  (*let defaultEntityMasse = 100 and playerName = "test" in *)
   open_window ();
-  menu_loop (ref 0) (ref 0) (ref []);
-  (* try
-    (* On ouvre une connection avec le serveur *)
-    let (input, output) = open_connection () in
-    (* on recupere l'identifiant du joueur auprès du serveur *)
-    output_string output "GETPLAYERID\n";
-    flush output;
-    let id = Scanf.sscanf (input_line input) "%d" (fun x -> x) in
-    let player = new player id playerName defaultEntityMasse [new entity 0 playerName (generate_cord ()) (generate_color ()) defaultEntityMasse Player Idle] in
-    ignore (Thread.create handle_incoming_data input);
-    event_loop player (Unix.gettimeofday ()) (Some (incomingData, output));
-  with Unix.Unix_error _ -> generate_bushes (); 
-    let player = new player (-1) playerName defaultEntityMasse [new entity 0 playerName (generate_cord ()) (generate_color ()) defaultEntityMasse Player Idle] in 
-    event_loop player (Unix.gettimeofday ()) None;;*)
+  menu_loop (ref 0) (ref 0) (ref []);;
