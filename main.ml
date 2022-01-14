@@ -166,7 +166,7 @@ and player id name score entities =
     method removeEntityById id = entities <- List.filter (fun entity -> entity#getId <> id) entities; 
     (* permet de mettre à jour l'entité principale lorsque qu'elle s'est faite manger *)
     method updateMainEntity =
-      if List.length entities > 0 then
+      if  entities <> [] then
         begin
         let newEntities = (List.sort (fun e1 e2 -> e2#getMasse - e1#getMasse) entities) in
           let candidate = List.hd newEntities in
@@ -243,7 +243,7 @@ and player id name score entities =
             | id when id = playerId -> let isMainEntityEaten = entityId = self#getMainEntity#getId and masse = (List.find (fun entity -> entity#getId = entityId) entities)#getMasse in
                 self#removeEntityById entityId;
                 self#removeScore masse;
-                if List.length entities = 0 then raise YouLose else (if isMainEntityEaten then self#updateMainEntity);
+                if entities = [] then raise YouLose else (if isMainEntityEaten then self#updateMainEntity);
 
             | _ -> let otherPlayer = List.find (fun p -> p#getId = playerId) !other_players in otherPlayer#removeEntityById entityId)
           | _ -> raise (InvalidResponseType responseType);
@@ -271,7 +271,7 @@ and player id name score entities =
         List.iter (fun otherEntity ->
 
         let candidates = List.filter (fun entity -> mange entity otherEntity self#getRatio) entities 
-        in if List.length candidates > 0 then
+        in if candidates <> [] then
         let candidate = List.hd (List.sort (fun e1 e2 -> e2#getMasse - e1#getMasse) candidates) 
         in 
           eaten <- (otherPlayer#getId, otherEntity#getId)::eaten;
@@ -289,13 +289,14 @@ end;;
 let drawEntityName x y name rayon = 
   moveto x y;
   set_line_width 4;
-  set_color black;
+  set_color white;
   let iter = ref 1 
   and nombreLettre = float_of_int (List.length name) in
-  let coef = 2.*. float_of_int rayon /. (nombreLettre *. (3.5)) in 
-  let debutx = float_of_int x -. nombreLettre *. (11. +. coef *. 2.) /. 2.
-  and debuty = float_of_int y -. 5. 
-  in List.iter (fun letter -> (match letter with 
+  let coef = ((1.8 *. (float_of_int rayon)) -. 10. *. (nombreLettre)) /. (nombreLettre *. 1.5) in 
+  let debutx = float_of_int x -. (float_of_int rayon *. 0.9) -. 1.5 *. coef -. 5.
+  and debuty = float_of_int y -. coef in
+
+   List.iter (fun letter -> (match letter with 
   | -1 -> ()
   | k -> let decallage = debutx +. float_of_int(!iter)*.(1.5*.coef +. 10.) in
           draw_segments (Array.map (fun (a, b, c, d) -> (int_of_float(coef*.a +. decallage), int_of_float(coef*.b +. debuty), int_of_float(coef*.c +. decallage), int_of_float(coef*.d +. debuty))) array_tracer_lettre.(k) ));
@@ -548,7 +549,7 @@ let rec menu_loop windowX windowY pseudo =
       set_color black;
       draw_rect (size_x()*5/16) (size_y()*7/24) (size_x()*6/16) (size_y()*1/12);
 
-      if List.length !pseudo >= 1 then affiche_lettre (!pseudo);
+      if !pseudo <> [] then affiche_lettre (!pseudo);
     
       synchronize ();
     end;
@@ -565,9 +566,9 @@ let rec menu_loop windowX windowY pseudo =
                 let lettre = read_key () in
                 let intlettre = int_of_char lettre in
                 match intlettre with 
-                  | 8 -> if List.length (!pseudo) >= 1 then (pseudo := List.tl (!pseudo); affiche_lettre (!pseudo))
-                  | 32 when List.length !pseudo < 10 -> (pseudo := (-1)::(!pseudo);) 
-                  | intlettre when List.length !pseudo <= 10 
+                  | 8 -> if !pseudo <> [] then (pseudo := List.tl (!pseudo); affiche_lettre (!pseudo))
+                  | 32 when List.length !pseudo < 8 -> (pseudo := (-1)::(!pseudo);) 
+                  | intlettre when List.length !pseudo < 8 
                                   && ((intlettre >=65 && intlettre <= 90) || (intlettre >= 97 && intlettre <= 122)) 
                                   -> pseudo := (((int_of_char lettre)-65) mod 32)::(!pseudo);
                                   affiche_lettre (!pseudo);
