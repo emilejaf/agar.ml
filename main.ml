@@ -19,6 +19,7 @@ let spawnFoodRadius = 300.;;
 let despawnFoodRadius = 350.;;
 let maxBushes = 20;;
 
+(* alphabet *)
 let array_tracer_lettre = [|
 [|(0.,0.,0.75,2.);(0.75,2.,1.5,0.);(0.35,1.,1.,1.)|];
 [|(0.,0.,0.,2.);(0.,2.,1.,2.);(1.,2.,1.,1.);(0.,0.,1.5,0.);(1.5,1.,1.5,0.);(0.,1.,1.5,1.)|];
@@ -176,6 +177,7 @@ and player id name score entities =
     method getScore = score;
     method getSpeed = 60. *. exp (-. float_of_int (score) /. 750.) +. 45.;
     method getFoods = foods;
+    (* permet d'harmoniser l'affichage des différentes entités  *)
     method getRatio = 4.;
     method updateCoords deltat = List.iter(fun entity -> entity#updateCoords deltat) entities;
     method updatePlayerSpeed mousex mousey deltat = 
@@ -240,17 +242,19 @@ and player id name score entities =
           | "EAT" ->  (* lorsque une entité d'un autre joueur se fait manger se fait manger *)
             let entityId = Scanf.sscanf (List.hd entitesData) "%d" (fun id -> id) in
             (match id with
+            (* si un autre joueur a mangé une entité *)
             | id when id = playerId -> let isMainEntityEaten = entityId = self#getMainEntity#getId and masse = (List.find (fun entity -> entity#getId = entityId) entities)#getMasse in
                 self#removeEntityById entityId;
                 self#removeScore masse;
-                if entities = [] then raise YouLose else (if isMainEntityEaten then self#updateMainEntity);
-
+                if entities = [] then (close_out_noerr output; raise YouLose;) else (if isMainEntityEaten then self#updateMainEntity);
+            (* si cette entité appartient à un autre joueur *)
             | _ -> let otherPlayer = List.find (fun p -> p#getId = playerId) !other_players in otherPlayer#removeEntityById entityId)
           | _ -> raise (InvalidResponseType responseType);
       )
       (!incomingData);
     incomingData := [];
 
+  (* separe l'entité principale *)
   method split =
     let mainEntity = self#getMainEntity in
     (if mainEntity#getMasse >= 50 && List.for_all (fun entity -> mainEntity#getMasse * 3 / 4 > entity#getMasse  ) (List.tl entities) then 
@@ -264,7 +268,7 @@ and player id name score entities =
       in newEntity#setSpeed entitySpeed;
       self#addEntity newEntity);
 
-    (* EAT OTHER PLAYERS *)
+    (* manger les autres joueurs *)
     method eat output = 
       List.iter (fun otherPlayer ->
         
@@ -286,6 +290,7 @@ and player id name score entities =
 
 end;;
 
+(* permet d'afficher le nom de l'entité *)
 let drawEntityName x y name rayon = 
   moveto x y;
   set_line_width 4;
@@ -309,6 +314,7 @@ let drawMainPlayer player =
   fill_circle (size_x() / 2) (size_y () / 2) (mainEntity#getRadius);
   drawEntityName (size_x () / 2) (size_y () / 2) (mainEntity#getName) (mainEntity#getRadius);;
 
+(* dessine un buisson *)
 let drawBush x y radius color = let tableau_coord = Array.make 80 (0,0) and tableau_coord2 = Array.make 80 (0,0) and cote = 6. and compteur = ref 0 and alpha = 2.*.Float.pi/.40. in
   for k=0 to 40-1 do
     let i = float_of_int k in
@@ -377,12 +383,14 @@ let generate_bushes () =
 
 let getOtherPlayersEntites () = List.flatten (List.map (fun otherPlayer -> otherPlayer#getEntities) !other_players);;
 
+(* recupere toutes les entités issues d'un joueur *)
 let getPlayersEntities player func = List.sort (fun e1 e2 -> e2#getMasse - e1#getMasse) (List.filter func ((getOtherPlayersEntites ())@(List.tl player#getEntities)));;
 
+(* boucle principale de jeu *)
 let rec event_loop player time serverData = 
   clear_graph();
 
-  (* UPDATES *)
+  (* mise a jour *)
   let newTime = Unix.gettimeofday () and (mousex, mousey) = mouse_pos () in
   let deltaTime = newTime -. time in
 
@@ -397,7 +405,7 @@ let rec event_loop player time serverData =
       | 32 -> player#split; (* press space bar *)
       | _ -> ());
 
-  (* MONITORING *)
+  (* affichage des differents textes *)
   moveto 5 (size_y () - 15);
   set_color black;
   (match serverData with 
@@ -410,8 +418,8 @@ let rec event_loop player time serverData =
   moveto (size_x () - 125) (size_y () - 15);
   draw_string "Press SPACE to split";
 
-  moveto (size_x () - 100) (size_y () - 30);
-  draw_string (Printf.sprintf "Score : %d" player#getScore);
+  moveto (size_x () - 125) (size_y () - 30);
+  draw_string (Printf.sprintf "Votre score : %d" player#getScore);
 
   (match serverData with
     | None -> ()
@@ -419,8 +427,8 @@ let rec event_loop player time serverData =
       draw_string (Printf.sprintf "Connected : %d " (List.length (!other_players) + 1));
       
       let i = ref 0 in
-      List.iter (fun p -> moveto (size_x () - 150) (size_y () - 45 - !i * 15);
-        draw_string (Printf.sprintf "Player %d score : %d" p#getId p#getScore);
+      List.iter (fun p -> moveto (size_x () - 125) (size_y () - 45 - !i * 15);
+        draw_string (Printf.sprintf "%s score : %d" p#getName p#getScore);
         incr i;
       ) (List.sort (fun p1 p2 -> p2#getScore - p1#getScore) !other_players);
       );
@@ -428,7 +436,7 @@ let rec event_loop player time serverData =
 
 
   
-  (* DRAWING *)
+  (* affichage des entités *)
   player#destroyFoods;
   player#handleFoodCollisions;
   player#generateFoods;
@@ -458,6 +466,7 @@ let handle_incoming_data input =
   done;
   with End_of_file -> ();;
 
+(* permet d'afficher une lettre sur le menu principal *)
 let affiche_lettre list_lettre = 
   set_line_width 4;
   set_color white;
@@ -478,14 +487,33 @@ let affiche_lettre list_lettre =
 
 
 let circles = Array.init 50 (fun _i -> let x = Random.float 1. and y = Random.float 1. and color = generate_color () in (x, y, color, Random.int (10)+20) );;
+(* boucle de menu *)
 let rec menu_loop windowX windowY pseudo = 
-
+  (* on stocke windowX et windowY afin de détécter les redimensionnements de la fenêtre *)
   if((!windowX) <> size_x () || (!windowY) <> size_y ()) then
     begin
+      (* on doit réafficher le menu *)
       windowX := size_x ();
       windowY := size_y ();
-      (* Rerender main menu *)
       clear_graph ();
+
+      (* on trace la grille *)
+      set_line_width 0;
+        let gridSpacing = 40
+      in let gridStartX = 0
+        and gridStartY = 0
+      in let i = ref gridStartX and j = ref gridStartY
+      in set_color (rgb 208 208 208);
+      while !i < size_x () do
+        moveto !i 0;
+        lineto !i (size_y ());
+        i := !i + gridSpacing;  
+      done;
+      while !j < size_y () do
+        moveto 0 !j;
+        lineto (size_x ()) !j;
+        j := !j + gridSpacing;
+      done;
       
       (* on trace les cercles *)
       Array.iter (fun (x, y, color, radius) -> set_color color; fill_circle (int_of_float(x *. float_of_int (size_x ()))) (int_of_float(y *. float_of_int (size_y ()))) radius) circles;
@@ -515,7 +543,7 @@ let rec menu_loop windowX windowY pseudo =
         (fun lettre -> fill_poly (Array.map (fun (x, y) -> (int_of_float (coef*.x +. float_of_int(size_x())/.8.), int_of_float ((coef*.y +. float_of_int(size_y())/.2.)))) lettre))
         [| lettre2; lettre5; lettre7 |];
   
-      (* on trace la textbox *)
+      (* on trace les bouttons *)
       set_line_width 4;
       set_color green;
       fill_rect (size_x()/4) (size_y()*3/24) (size_x()*3/16) (size_y()*1/12);
@@ -542,7 +570,7 @@ let rec menu_loop windowX windowY pseudo =
               incr iter;   
         )([|'q';'u';'i';'t'|]);
 
-
+      (* on trace la zone de texte *)
       set_color white;
       fill_rect (size_x()*5/16) (size_y()*7/24) (size_x()*6/16) (size_y()*1/12);
 
@@ -558,7 +586,7 @@ let rec menu_loop windowX windowY pseudo =
     if button_down () then
       begin match mouse_pos () with
       | mouse_x, mouse_y when mouse_x>=size_x()*5/16 && mouse_x<=size_x()*11/16 && mouse_y>= size_y()*7/24 && mouse_y<= size_y()*9/24
-        -> while key_pressed () do ignore (read_key ()) done;
+        -> while key_pressed () do ignore (read_key ()) done; (* gestion de la zone de texte *)
           let buttonPressedOut = ref false in
           while( not !buttonPressedOut) do
             if key_pressed () then
@@ -579,7 +607,7 @@ let rec menu_loop windowX windowY pseudo =
             then (buttonPressedOut := true)
           done;
       | mouse_x, mouse_y when mouse_x >=size_x()/4 && mouse_x<=size_x()*7/16 && mouse_y>= size_y()*3/24 && mouse_y<= size_y()*5/24
-        -> begin 
+        -> begin (* on commence la partie *)
           try 
             let defaultEntityMasse = 0 and playerName = String.of_seq (List.to_seq (List.map (fun c -> if c = -1 then ' ' else char_of_int (c+65)) !pseudo))  in 
               try
@@ -610,6 +638,7 @@ let open_window () =
   resize_window 800 600;
   set_window_title "Agar.ml";
   display_mode false;
+  remember_mode false;
   auto_synchronize false;;
 
 let () = 
