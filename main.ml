@@ -1,3 +1,11 @@
+#use "topfind"
+#require "graphics"
+(*#load "graphics.cma" *)
+
+#load "unix.cma"
+#directory "+threads";;
+#load "threads.cma";;
+
 open Graphics;;
 
 exception InvalidResponseType of string;;
@@ -455,7 +463,7 @@ let rec event_loop player time serverData =
 
 
 let open_connection () = 
-    let server_address = let addr = Unix.inet_addr_of_string "129.151.252.122" and port = 8086 in Unix.ADDR_INET(addr, port)
+    let server_address = let addr = Unix.inet_addr_of_string "129.151.235.116" and port = 8086 in Unix.ADDR_INET(addr, port)
     in Unix.open_connection server_address;;
 
 let handle_incoming_data input = 
